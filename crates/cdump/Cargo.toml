@@ -1,0 +1,9 @@
+[package]
+name = "cdump"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc.workspace = true
+memoffset.workspace = true
+cdump-macro.workspace = true

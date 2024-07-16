@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+darling = "0.20"
+libc = "0.2"
+memoffset = "0.9"
+cdump.path = "crates/cdump"
+cdump-macro.path = "crates/macro"
