@@ -7,7 +7,7 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
 mod field_analysis;
 mod helpers;
 
-#[proc_macro_derive(CSerialize)]
+#[proc_macro_derive(CSerialize, attributes(cdump))]
 pub fn c_serialize_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
 
@@ -48,27 +48,7 @@ fn write_deep_fields(fields: Vec<Field>) -> (TokenStream, TokenStream) {
     let mut quotes = Vec::new();
 
     for field in fields {
-        let ident = &field.ident;
-
-        quotes.push(match field.ty {
-            FieldType::Reference => {
-                quote! {
-                    unsafe {
-                        ::cdump::CSerialize::serialize(&*self.#ident, buf);
-                    }
-                }
-            },
-            FieldType::CString => {
-                start_index = true;
-                quote! {
-                    unsafe {
-                        let len = ::cdump::internal::libc_strlen(self.#ident);
-                        ::cdump::internal::set_length_in_ptr(buf, start_index + ::cdump::offset_of!(Self, #ident), len);
-                        buf.push_slice(std::slice::from_raw_parts(self.#ident as *const _ as *const u8, len + 1));
-                    }
-                }
-            }
-        });
+        quotes.push(write_deep_fields_inner(&mut start_index, &field, None));
     }
 
     (
@@ -82,7 +62,59 @@ fn write_deep_fields(fields: Vec<Field>) -> (TokenStream, TokenStream) {
     )
 }
 
-#[proc_macro_derive(CDeserialize)]
+fn write_deep_fields_inner(
+    start_index: &mut bool,
+    field: &Field,
+    ptr_offset: Option<TokenStream>,
+) -> TokenStream {
+    let field_ident = &field.ident;
+    let ident = match &ptr_offset {
+        Some(ptr_offset) => quote! {
+            self.#field_ident.add(#ptr_offset)
+        },
+        None => quote! {
+            self.#field_ident
+        },
+    };
+
+    match &field.ty {
+        FieldType::Reference => {
+            quote! {
+                unsafe {
+                    ::cdump::CSerialize::serialize(&*#ident, buf);
+                }
+            }
+        }
+        FieldType::CString => {
+            *start_index = true;
+
+            let set_len = match ptr_offset.is_none() {
+                true => quote! {
+                    ::cdump::internal::set_length_in_ptr(buf, start_index + ::cdump::offset_of!(Self, #field_ident), len);
+                },
+                false => quote! {},
+            };
+
+            quote! {
+                unsafe {
+                    let len = ::cdump::internal::libc_strlen(#ident);
+                    #set_len
+                    buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, len + 1));
+                }
+            }
+        }
+        FieldType::Array(len, inner) => {
+            let inner = write_deep_fields_inner(start_index, inner, Some(quote! { i }));
+            quote! {
+                for i in 0..(self.#len as usize) {
+                    #inner
+                }
+            }
+        }
+    }
+}
+
+#[proc_macro_derive(CDeserialize, attributes(cdump))]
 pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let validate_repr = validate_repr(&ast.attrs, "C", ast.span()).to_compile_error();
@@ -122,23 +154,60 @@ fn read_deep_fields(fields: Vec<Field>) -> TokenStream {
     let mut quotes = Vec::new();
 
     for field in fields {
-        let ident = &field.ident;
-
-        quotes.push(match field.ty {
-            FieldType::Reference => {
-                quote! {
-                    dst.#ident = ::cdump::internal::deserialize_shallow_copied(buf);
-                }
-            },
-            FieldType::CString => {
-                quote! {
-                    dst.#ident = buf.read_slice(dst.#ident as usize).as_ptr() as *const ::std::ffi::c_char;
-                }
-            }
-        });
+        quotes.push(read_deep_fields_inner(&field, 0));
     }
 
     quotes.into_iter().collect()
+}
+
+fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
+    let field_ident = &field.ident;
+    let ident = match ptr_offset == 0 {
+        true => quote! {
+            dst.#field_ident
+        },
+        false => quote! {
+            dst.#field_ident.add(#ptr_offset)
+        },
+    };
+    let path = &field.path;
+
+    match &field.ty {
+        FieldType::Reference => {
+            quote! {
+                #ident = ::cdump::internal::deserialize_shallow_copied(buf);
+            }
+        }
+        FieldType::CString => {
+            quote! {
+                #ident = buf.read_slice(#ident as usize).as_ptr() as *const ::std::ffi::c_char;
+            }
+        }
+        FieldType::Array(len, inner) => {
+            let (prefix, start, inner) = match inner.ty {
+                FieldType::Reference => (
+                    read_deep_fields_inner(inner, ptr_offset),
+                    1u32,
+                    quote! {
+                        _ = ::cdump::internal::deserialize_shallow_copied::<T, #path>(buf);
+                    },
+                ),
+                FieldType::CString => (quote! {}, 1u32, quote! {}),
+                _ => (
+                    quote! {},
+                    0u32,
+                    read_deep_fields_inner(inner, ptr_offset + 1),
+                ),
+            };
+
+            quote! {
+                #prefix
+                for i in #start..dst.#len {
+                    #inner
+                }
+            }
+        }
+    }
 }
 
 #[proc_macro_attribute]
