@@ -34,7 +34,21 @@ where
 {
     buf.align::<T2>();
     let reference = &mut *buf.read_mut::<T2>();
-    buf.add_len(::std::mem::size_of::<T2>());
+    buf.add_read(::std::mem::size_of::<T2>());
+    CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
+    reference
+}
+
+// Deserialize the shallow copied data in the buffer and returns the reference to it.
+/// # Safety
+/// Caller must ensure that the next data in the buffer is a valid representation of `T2`.
+#[inline]
+pub unsafe fn deserialize_shallow_copied_at<T1, T2>(buf: &mut T1, index: usize) -> *mut T2
+where
+    T1: crate::CDumpReader,
+    T2: crate::CDeserialize<T1>,
+{
+    let reference = &mut *buf.get_mut(index);
     CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
     reference
 }

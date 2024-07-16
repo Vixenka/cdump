@@ -1,3 +1,8 @@
+use std::{
+    ffi::{c_char, CStr},
+    fmt::Debug,
+};
+
 use cdump::{CDeserialize, CSerialize};
 
 #[derive(Debug, CSerialize, CDeserialize)]
@@ -9,25 +14,47 @@ struct DeepFoo {
     c: f64,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, CSerialize, CDeserialize)]
+#[derive(Copy, Clone, CSerialize, CDeserialize)]
 #[repr(C)]
 struct ShallowBar {
     a: f64,
-    b: u8,
+    b: *const c_char,
     c: u32,
+}
+
+impl PartialEq for ShallowBar {
+    fn eq(&self, other: &Self) -> bool {
+        self.a == other.a
+            && self.c == other.c
+            && unsafe { CStr::from_ptr(self.b) == CStr::from_ptr(other.b) }
+    }
+}
+
+impl Debug for ShallowBar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = unsafe { CStr::from_ptr(self.b) };
+        f.debug_struct("ShallowBar")
+            .field("a", &self.a)
+            .field("b", &text)
+            .field("c", &self.c)
+            .finish()
+    }
 }
 
 #[test]
 fn array() {
+    let text1 = c"what";
+    let text2 = c"11";
+
     let array = [
         ShallowBar {
             a: 19.84,
-            b: 20,
+            b: text1.as_ptr(),
             c: 1864,
         },
         ShallowBar {
             a: 20.77,
-            b: 11,
+            b: text2.as_ptr(),
             c: 7864,
         },
     ];

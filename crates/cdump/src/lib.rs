@@ -32,19 +32,35 @@ pub trait CDumpReader {
     /// Read the slice from the buffer.
     fn read_slice(&mut self, len: usize) -> &[u8];
     /// Adds the length to the current position.
-    fn add_len(&mut self, len: usize);
+    fn add_read(&mut self, len: usize);
+
+    /// Read mutable reference to `T` which is located at index, without propagating the read count.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer from index is a valid representation of `T`, and must be careful
+    /// with multiple mutable references to the same data.
+    unsafe fn get_mut<T>(&self, index: usize) -> *mut T;
 
     /// Read mutable reference to `T` which is located at the current position, without propagating the read count.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `T`, and must be careful
     /// with multiple mutable references to the same data.
     unsafe fn read_mut<T>(&self) -> *mut T;
+
+    fn get_read(&self) -> usize;
 }
 
 /// Trait for serializing the raw data to the buffer.
 pub trait CSerialize<T: CDumpWriter> {
     /// Serialize the data to the buffer.
     fn serialize(&self, buf: &mut T);
+
+    /// Serializes the data to the buffer, ommiting the shallow copy.'
+    /// # Params
+    /// * `buf` - The buffer to write to.
+    /// * `start_index` - The index in the buffer where shallow copied data of the object is located.
+    /// # Safety
+    /// Caller must ensure that the `start_index` is valid.
+    unsafe fn serialize_without_shallow_copy(&self, buf: &mut T, start_index: usize);
 }
 
 /// Trait for deserializing the raw data from the buffer.
@@ -160,19 +176,26 @@ impl CDumpReader for CDumpBufferReader {
     }
 
     fn read_slice(&mut self, len: usize) -> &[u8] {
+        println!("self.read: {}", len);
         let slice = &self.data.get_mut()[self.read..self.read + len];
         self.read += len;
         slice
     }
 
-    fn add_len(&mut self, len: usize) {
+    fn add_read(&mut self, len: usize) {
         self.read += len;
     }
 
+    unsafe fn get_mut<T>(&self, index: usize) -> *mut T {
+        let s = &mut *self.data.get();
+        &mut s[index] as *mut u8 as *mut T
+    }
+
     unsafe fn read_mut<T>(&self) -> *mut T {
-        unsafe {
-            let s = &mut *self.data.get();
-            &mut s[self.read] as *mut u8 as *mut T
-        }
+        self.get_mut(self.read)
+    }
+
+    fn get_read(&self) -> usize {
+        self.read
     }
 }
