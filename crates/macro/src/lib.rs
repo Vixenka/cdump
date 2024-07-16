@@ -51,6 +51,13 @@ fn write_deep_fields(fields: Vec<Field>) -> (TokenStream, TokenStream) {
         let ident = &field.ident;
 
         quotes.push(match field.ty {
+            FieldType::Reference => {
+                quote! {
+                    unsafe {
+                        ::cdump::CSerialize::serialize(&*self.#ident, buf);
+                    }
+                }
+            },
             FieldType::CString => {
                 start_index = true;
                 quote! {
@@ -93,6 +100,10 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
                 #validate_repr
 
                 #align_and_read_copy
+                Self::deserialize_to_without_shallow_copy(buf, dst);
+            }
+
+            unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: &mut Self) {
                 #deep_fields
             }
         }
@@ -102,7 +113,7 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
 fn align_and_read_copy() -> TokenStream {
     quote! {
         buf.align::<Self>();
-        let size = std::mem::size_of::<Self>();
+        let size = ::std::mem::size_of::<Self>();
         std::ptr::copy_nonoverlapping(buf.read_slice(size).as_ptr(), dst as *mut _ as *mut u8, size);
     }
 }
@@ -114,11 +125,14 @@ fn read_deep_fields(fields: Vec<Field>) -> TokenStream {
         let ident = &field.ident;
 
         quotes.push(match field.ty {
+            FieldType::Reference => {
+                quote! {
+                    dst.#ident = ::cdump::internal::deserialize_shallow_copied(buf);
+                }
+            },
             FieldType::CString => {
                 quote! {
-                    unsafe {
-                        dst.#ident = buf.read_slice(std::mem::transmute(dst.#ident)).as_ptr() as *const ::std::ffi::c_char;
-                    }
+                    dst.#ident = buf.read_slice(dst.#ident as usize).as_ptr() as *const ::std::ffi::c_char;
                 }
             }
         });

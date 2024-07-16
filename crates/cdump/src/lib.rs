@@ -1,4 +1,7 @@
-use std::mem::{self, MaybeUninit};
+use std::{
+    cell::UnsafeCell,
+    mem::{self, MaybeUninit},
+};
 
 pub use cdump_macro::{dynamic_serializator, CDeserialize, CSerialize};
 pub use memoffset::offset_of;
@@ -28,6 +31,14 @@ pub trait CDumpReader {
     fn align<T>(&mut self);
     /// Read the slice from the buffer.
     fn read_slice(&mut self, len: usize) -> &[u8];
+    /// Adds the length to the current position.
+    fn add_len(&mut self, len: usize);
+
+    /// Read mutable reference to `T` which is located at the current position, without propagating the read count.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer is a valid representation of `T`, and must be careful
+    /// with multiple mutable references to the same data.
+    unsafe fn read_mut<T>(&self) -> *mut T;
 }
 
 /// Trait for serializing the raw data to the buffer.
@@ -43,6 +54,11 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     /// Field `dst` can be uninitialized, then reading from it is undefined behavior.
     unsafe fn deserialize_to(buf: &mut T, dst: &mut Self);
+
+    /// Deserializes the data from the buffer to the destination, ommiting the shallow copy.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer is a valid representation of deep part of `Self`.
+    unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: &mut Self);
 
     /// Deserialize the data from the buffer to the uninitialized memory.
     /// # Safety
@@ -121,13 +137,16 @@ impl CDumpWriter for CDumpBufferWriter {
 
 /// Simple buffer reader for CDeserialization.
 pub struct CDumpBufferReader {
-    data: Vec<u8>,
+    data: UnsafeCell<Vec<u8>>,
     read: usize,
 }
 
 impl CDumpBufferReader {
     pub fn new(data: Vec<u8>) -> Self {
-        Self { data, read: 0 }
+        Self {
+            data: UnsafeCell::new(data),
+            read: 0,
+        }
     }
 }
 
@@ -141,8 +160,19 @@ impl CDumpReader for CDumpBufferReader {
     }
 
     fn read_slice(&mut self, len: usize) -> &[u8] {
-        let slice = &self.data[self.read..self.read + len];
+        let slice = &self.data.get_mut()[self.read..self.read + len];
         self.read += len;
         slice
+    }
+
+    fn add_len(&mut self, len: usize) {
+        self.read += len;
+    }
+
+    unsafe fn read_mut<T>(&self) -> *mut T {
+        unsafe {
+            let s = &mut *self.data.get();
+            &mut s[self.read] as *mut u8 as *mut T
+        }
     }
 }

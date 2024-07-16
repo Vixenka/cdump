@@ -7,6 +7,7 @@ pub struct Field {
 }
 
 pub enum FieldType {
+    Reference,
     CString,
 }
 
@@ -24,13 +25,12 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
                 ));
             };
 
-            if !path.path.is_ident("c_char") {
-                continue;
-            }
-
             vec.push(Field {
                 ident: field.ident.clone(),
-                ty: FieldType::CString,
+                ty: match path.path.is_ident("c_char") {
+                    true => FieldType::CString,
+                    false => FieldType::Reference,
+                },
             });
         }
     }

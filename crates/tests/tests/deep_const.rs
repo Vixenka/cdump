@@ -6,6 +6,7 @@ struct DeepFoo {
     a: u8,
     b: *const ShallowBar,
     c: f32,
+    d: *const ShallowBar,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, CSerialize, CDeserialize)]
@@ -23,10 +24,16 @@ fn deep_const() {
         b: 20,
         c: 1864,
     };
+    let bar2 = ShallowBar {
+        a: 20.77,
+        b: 11,
+        c: 7864,
+    };
     let obj = DeepFoo {
         a: 19,
         b: &bar,
         c: 2024.06,
+        d: &bar2,
     };
 
     let mut buf = cdump::CDumpBufferWriter::new();
@@ -39,4 +46,6 @@ fn deep_const() {
     assert_ne!(obj.b, copy.b);
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
     assert_eq!(obj.c, copy.c);
+    assert_ne!(obj.d, copy.d);
+    assert_eq!(unsafe { *obj.d }, unsafe { *copy.d });
 }
