@@ -3,7 +3,7 @@ use std::{
     mem::{self, MaybeUninit},
 };
 
-pub use cdump_macro::{dynamic_serializator, CDeserialize, CSerialize};
+pub use cdump_macro::{CDeserialize, CSerialize};
 pub use memoffset::offset_of;
 pub mod internal;
 

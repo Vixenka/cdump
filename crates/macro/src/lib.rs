@@ -95,6 +95,9 @@ fn write_deep_fields_inner(
                 buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, len));
             }
         }
+        FieldType::Dynamic(serializer, _) => quote! {
+            #serializer(buf, #ident);
+        },
         FieldType::Array(len, inner) => {
             let mut inner_path = inner.path.to_token_stream();
             let inner = match inner.ty {
@@ -202,6 +205,9 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
                 #ident = buf.read_slice(#ident as usize).as_ptr() as *const ::std::ffi::c_char;
             }
         }
+        FieldType::Dynamic(_, deserializer) => quote! {
+            #ident = #deserializer(buf);
+        },
         FieldType::Array(len, inner) => {
             let mut inner_path = inner.path.to_token_stream();
             let (prefix, start, inner) = match inner.ty {
@@ -246,12 +252,4 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
             }
         }
     }
-}
-
-#[proc_macro_attribute]
-pub fn dynamic_serializator(
-    _attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    item
 }

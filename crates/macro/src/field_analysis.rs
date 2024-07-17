@@ -11,6 +11,7 @@ pub enum FieldType {
     Reference,
     CString,
     Array(Ident, Box<Field>),
+    Dynamic(Ident, Ident),
 }
 
 pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
@@ -20,40 +21,24 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
     for field in &receiver.data.take_struct().unwrap().fields {
         if let Type::Ptr(_) = &field.ty {
             let (ty, ptr_level) = extract_ptr(&field.ty);
-            let is_c_char = is_c_char(ty);
+            let raw_ty = get_raw_field_type(ty);
 
             let path = match ty {
                 Type::Path(path) => Some(path.clone()),
                 _ => None,
             };
 
-            if ptr_level != 1 {
-                if is_c_char {
-                    if field.array.is_none() {
-                        return Err(Error::new(
-                            field.ty.span(),
-                            "two levels of pointer in CString, requires field to be an array",
-                        ));
-                    }
+            validate_field(raw_ty, ptr_level, field)?;
 
-                    if ptr_level > 2 {
-                        return Err(Error::new(
-                            field.ty.span(),
-                            "more than two levels of pointer in CString is not supported",
-                        ));
-                    }
-                } else {
-                    return Err(Error::new(
-                        field.ty.span(),
-                        "only one level of pointer is supported for a reference",
-                    ));
+            let fty = match raw_ty {
+                RawFieldType::Reference => FieldType::Reference,
+                RawFieldType::CString => FieldType::CString,
+                RawFieldType::Dynamic => {
+                    let dynamic = field.dynamic.as_ref().unwrap();
+                    FieldType::Dynamic(dynamic.serializer.clone(), dynamic.deserializer.clone())
                 }
-            }
-
-            let fty = match is_c_char {
-                true => FieldType::CString,
-                false => FieldType::Reference,
             };
+
             vec.push(Field {
                 ident: field.ident.clone(),
                 path: path.clone(),
@@ -75,6 +60,44 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
     Ok(vec)
 }
 
+fn validate_field(
+    raw_ty: RawFieldType,
+    ptr_level: usize,
+    field: &FieldReceiver,
+) -> Result<(), Error> {
+    if ptr_level != 1 {
+        if raw_ty == RawFieldType::CString {
+            if field.array.is_none() {
+                return Err(Error::new(
+                    field.ty.span(),
+                    "two levels of pointer in CString, requires field to be an array",
+                ));
+            }
+
+            if ptr_level > 2 {
+                return Err(Error::new(
+                    field.ty.span(),
+                    "more than two levels of pointer in CString is not supported",
+                ));
+            }
+        } else {
+            return Err(Error::new(
+                field.ty.span(),
+                "only one level of pointer is supported for a reference",
+            ));
+        }
+    }
+
+    if raw_ty == RawFieldType::Dynamic && field.dynamic.is_none() {
+        return Err(Error::new(
+            field.ty.span(),
+            "dynamic field requires provide a serializer and deserializer",
+        ));
+    }
+
+    Ok(())
+}
+
 fn extract_ptr(ty: &Type) -> (&Type, usize) {
     match ty {
         Type::Ptr(ty) => {
@@ -85,10 +108,17 @@ fn extract_ptr(ty: &Type) -> (&Type, usize) {
     }
 }
 
-fn is_c_char(ty: &Type) -> bool {
+fn get_raw_field_type(ty: &Type) -> RawFieldType {
     match ty {
-        Type::Path(path) => path.path.is_ident("c_char"),
-        _ => false,
+        Type::Path(path) => {
+            if path.path.is_ident("c_char") {
+                return RawFieldType::CString;
+            } else if path.path.is_ident("c_void") {
+                return RawFieldType::Dynamic;
+            }
+            RawFieldType::Reference
+        }
+        _ => RawFieldType::Reference,
     }
 }
 
@@ -103,9 +133,23 @@ struct FieldReceiver {
     ident: Option<Ident>,
     ty: Type,
     array: Option<ArrayReceiver>,
+    dynamic: Option<DynamicReceiver>,
 }
 
 #[derive(darling::FromMeta)]
 struct ArrayReceiver {
     len: Ident,
+}
+
+#[derive(darling::FromMeta)]
+struct DynamicReceiver {
+    serializer: Ident,
+    deserializer: Ident,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RawFieldType {
+    Reference,
+    CString,
+    Dynamic,
 }
