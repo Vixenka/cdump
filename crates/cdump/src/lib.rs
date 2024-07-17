@@ -176,7 +176,6 @@ impl CDumpReader for CDumpBufferReader {
     }
 
     fn read_slice(&mut self, len: usize) -> &[u8] {
-        println!("self.read: {}", len);
         let slice = &self.data.get_mut()[self.read..self.read + len];
         self.read += len;
         slice
@@ -188,7 +187,7 @@ impl CDumpReader for CDumpBufferReader {
 
     unsafe fn get_mut<T>(&self, index: usize) -> *mut T {
         let s = &mut *self.data.get();
-        &mut s[index] as *mut u8 as *mut T
+        (&mut s[index]) as *mut u8 as *mut T
     }
 
     unsafe fn read_mut<T>(&self) -> *mut T {

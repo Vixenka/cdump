@@ -1,7 +1,7 @@
 use field_analysis::{Field, FieldType};
 use helpers::{validate_repr, ErrorExt};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
 
 mod field_analysis;
@@ -96,7 +96,7 @@ fn write_deep_fields_inner(
             }
         }
         FieldType::Array(len, inner) => {
-            let inner_path = &inner.path;
+            let mut inner_path = inner.path.to_token_stream();
             let inner = match inner.ty {
                 FieldType::Reference => {
                     let ident = &inner.ident;
@@ -104,7 +104,17 @@ fn write_deep_fields_inner(
                         ::cdump::CSerialize::serialize_without_shallow_copy(&*self.#ident.add(i), buf, array_start_index + size * i);
                     }
                 }
-                _ => todo!("support 2D arrays"),
+                FieldType::CString => {
+                    inner_path = quote! { *const #inner_path };
+
+                    quote! {
+                        let ptr = *#ident.add(i);
+                        let len = ::cdump::internal::libc_strlen(ptr) + 1;
+                        ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
+                        buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
+                    }
+                }
+                _ => unimplemented!("2D arrays"),
             };
 
             quote! {
@@ -193,36 +203,44 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
             }
         }
         FieldType::Array(len, inner) => {
-            let inner_path = &inner.path;
-            let (prefix, _start, inner) = match inner.ty {
+            let mut inner_path = inner.path.to_token_stream();
+            let (prefix, start, inner) = match inner.ty {
                 FieldType::Reference => (
-                    {
-                        quote! {
-                            let len = dst.#len as usize;
-                            let size = ::std::mem::size_of::<#inner_path>();
-
-                            buf.align::<#inner_path>();
-                            let array_start_index = buf.get_read();
-                            buf.add_read(size * len);
-                            #ident = ::cdump::internal::deserialize_shallow_copied_at(buf, array_start_index);
-                        }
+                    quote! {
+                        buf.add_read(size * len);
+                        #ident = ::cdump::internal::deserialize_shallow_copied_at(buf, array_start_index);
                     },
-                    1usize,
+                    quote! { 1 },
                     quote! {
                         _ = ::cdump::internal::deserialize_shallow_copied_at::<T, #path>(buf, array_start_index + size * i);
                     },
                 ),
-                FieldType::CString => (quote! {}, 1usize, quote! {}),
-                _ => (
-                    quote! {},
-                    0usize,
-                    read_deep_fields_inner(inner, ptr_offset + 1),
-                ),
+                FieldType::CString => {
+                    inner_path = quote! { *const #inner_path };
+
+                    (
+                        quote! {
+                            #ident = buf.read_slice(size * len).as_ptr() as *const *const ::std::ffi::c_char;
+                        },
+                        quote! { 0 },
+                        quote! {
+                            let ptr = buf.get_mut(array_start_index + size * i);
+                            *ptr = buf.read_slice(*ptr as usize).as_ptr() as *const ::std::ffi::c_char;
+                        },
+                    )
+                }
+                _ => unimplemented!("2D arrays"),
             };
 
             quote! {
+                let len = dst.#len as usize;
+                let size = ::std::mem::size_of::<#inner_path>();
+
+                buf.align::<#inner_path>();
+                let array_start_index = buf.get_read();
+
                 #prefix
-                for i in 1..len {
+                for i in #start..len {
                     #inner
                 }
             }
