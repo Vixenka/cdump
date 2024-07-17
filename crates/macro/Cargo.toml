@@ -1,7 +1,8 @@
 [package]
 name = "cdump-macro"
-version = "0.1.0"
 edition = "2021"
+version = "0.1.0"
+publish = false
 
 [dependencies]
 syn.workspace = true

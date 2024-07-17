@@ -2,6 +2,13 @@
 name = "cdump"
 version = "0.1.0"
 edition = "2021"
+authors = ["Vixen <infvix@gmail.com>"]
+description = "Deep binary serialization of raw C types like e.g. Vulkan structures"
+keywords = ["serialization", "ffi", "unsafe", "c"]
+categories = ["ffi", "encoding"]
+readme = "README.md"
+repository = "https://github.com/Vixenka/cdump"
+license = "MIT"
 
 [dependencies]
 libc.workspace = true
