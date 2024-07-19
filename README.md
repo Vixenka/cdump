@@ -8,12 +8,12 @@ Crate for deep binary serialization of raw C types like e.g. [Vulkan structures]
 > This crate focus on unsafe side of Rust, probably this is not a tool which you should use in your simple program which does not use [FFI](https://doc.rust-lang.org/nomicon/ffi.html). Be careful what you use.
 
 ### Support
-- [x] Shallow/plain data
-- [x] Deep serialization under single pointer
-- [x] Arrays with providen length by another field
-- [x] CString
-- [x] Array of CStrings
-- [x] Dynamic types
+- [x] [Shallow/plain data](docs/features/shallow.md)
+- [x] [Deep serialization under single pointer](docs/features/deep.md)
+- [x] [Arrays with providen length by another field](docs/features/array.md)
+- [x] [CString](docs/features/cstring.md)
+- [x] [Array of CStrings](docs/features/cstring_array.md)
+- [x] [Dynamic types](docs/features/dynamic.md)
 
 Read more in the [changelog](/CHANGELOG.md).
 
@@ -42,8 +42,8 @@ let mut buf = cdump::CDumpBufferWriter::new();
 foo.serialize(&mut buf);
 
 let mut reader = buf.into_reader();
-// SAFETY: buffer of reader contains Foo what is guaranteed above 
-let copy_of_foo = unsafe { DeepFoo::deserialize(&mut reader) };
+// SAFETY: reader's buffer contains Foo what is guaranteed above 
+let copy_of_foo = unsafe { Foo::deserialize(&mut reader) };
 ```
 More information about usage you can find at [support list](#support).
 
