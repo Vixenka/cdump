@@ -1,3 +1,5 @@
+#![doc = include_str!("../../../README.md")]
+
 use std::{
     cell::UnsafeCell,
     mem::{self, MaybeUninit},
@@ -8,13 +10,16 @@ pub use memoffset::offset_of;
 pub mod internal;
 
 /// Trait for buffer suitable for CSerialization.
-pub trait CDumpWriter {
+/// # Safety
+/// The implementor must ensure that the buffer is prepared for the serialization next objects.
+///
+/// Buffer must be properly aligned for the writing data to it, e.g. if any object or it part is aligned to 16 bytes,
+/// then the first byte of the buffer must be also aligned to 16 bytes.
+pub unsafe trait CDumpWriter {
     /// Align the buffer to the `T`.
     fn align<T>(&mut self);
     /// Push the slice to the buffer.
     fn push_slice(&mut self, slice: &[u8]);
-    /// Get the mutable reference to the buffer at the index.
-    fn get_mut(&mut self, index: usize) -> &mut u8;
 
     /// Get current length of the buffer.
     fn len(&self) -> usize;
@@ -23,10 +28,20 @@ pub trait CDumpWriter {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Get mutable pointer to the [`u8`] at the `index`.
+    /// # Safety
+    /// Caller must ensure that the `index` is a valid index in the buffer.
+    unsafe fn as_mut_ptr_at(&mut self, index: usize) -> *mut u8;
 }
 
 /// Trait for buffer suitable for CDeserialization.
-pub trait CDumpReader {
+/// # Safety
+/// The implementor must ensure that the buffer is prepared for the deserialization next objects.
+///
+/// First byte of the buffer must be aligned to the same alignment as the first byte of the original buffer used for
+/// serialization.
+pub unsafe trait CDumpReader {
     /// Align the buffer to the `T`.
     fn align<T>(&mut self);
     /// Read the slice from the buffer.
@@ -38,13 +53,7 @@ pub trait CDumpReader {
     /// # Safety
     /// The caller must ensure that the next data in the buffer from index is a valid representation of `T`, and must be careful
     /// with multiple mutable references to the same data.
-    unsafe fn get_mut<T>(&self, index: usize) -> *mut T;
-
-    /// Read mutable reference to `T` which is located at the current position, without propagating the read count.
-    /// # Safety
-    /// The caller must ensure that the next data in the buffer is a valid representation of `T`, and must be careful
-    /// with multiple mutable references to the same data.
-    unsafe fn read_mut<T>(&self) -> *mut T;
+    unsafe fn as_mut_ptr_at<T>(&self, index: usize) -> *mut T;
 
     fn get_read(&self) -> usize;
 }
@@ -52,7 +61,9 @@ pub trait CDumpReader {
 /// Trait for serializing the raw data to the buffer.
 pub trait CSerialize<T: CDumpWriter> {
     /// Serialize the data to the buffer.
-    fn serialize(&self, buf: &mut T);
+    /// # Safety
+    /// The caller must ensure that the
+    unsafe fn serialize(&self, buf: &mut T);
 
     /// Serializes the data to the buffer, ommiting the shallow copy.'
     /// # Params
@@ -125,7 +136,7 @@ impl From<CDumpBufferWriter> for Vec<u8> {
     }
 }
 
-impl CDumpWriter for CDumpBufferWriter {
+unsafe impl CDumpWriter for CDumpBufferWriter {
     fn align<T>(&mut self) {
         let m = self.data.len() % mem::align_of::<T>();
         if m == 0 {
@@ -142,12 +153,12 @@ impl CDumpWriter for CDumpBufferWriter {
         self.data.extend_from_slice(slice);
     }
 
-    fn get_mut(&mut self, index: usize) -> &mut u8 {
-        &mut self.data[index]
-    }
-
     fn len(&self) -> usize {
         self.data.len()
+    }
+
+    unsafe fn as_mut_ptr_at(&mut self, index: usize) -> *mut u8 {
+        self.data.as_mut_ptr().add(index)
     }
 }
 
@@ -166,7 +177,7 @@ impl CDumpBufferReader {
     }
 }
 
-impl CDumpReader for CDumpBufferReader {
+unsafe impl CDumpReader for CDumpBufferReader {
     fn align<T>(&mut self) {
         let m = self.read % mem::align_of::<T>();
         if m != 0 {
@@ -185,13 +196,9 @@ impl CDumpReader for CDumpBufferReader {
         self.read += len;
     }
 
-    unsafe fn get_mut<T>(&self, index: usize) -> *mut T {
+    unsafe fn as_mut_ptr_at<T>(&self, index: usize) -> *mut T {
         let s = &mut *self.data.get();
         (&mut s[index]) as *mut u8 as *mut T
-    }
-
-    unsafe fn read_mut<T>(&self) -> *mut T {
-        self.get_mut(self.read)
     }
 
     fn get_read(&self) -> usize {

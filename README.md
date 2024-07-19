@@ -22,6 +22,9 @@ For my [other project](https://github.com/Vixenka/wie) I had to serialize and de
 
 ## Usage
 ```rust
+use std::ffi::c_char;
+use cdump::{CSerialize, CDeserialize};
+
 #[derive(CSerialize, CDeserialize)]
 #[repr(C)]
 struct Foo {
@@ -36,8 +39,22 @@ struct Foo {
 struct Bar {
     text_of_bar: *const c_char,
 }
-```
-```rust
+
+// Create object
+let text = c"Hello world!";
+let text_of_bar = c"Hello bar!";
+
+let bars = [Bar {
+    text_of_bar: text_of_bar.as_ptr(),
+}];
+
+let foo = Foo {
+    text: text.as_ptr(),
+    len_of_bars: bars.len() as u32,
+    bars: bars.as_ptr(),
+};
+
+// Serialize and deserialize
 let mut buf = cdump::CDumpBufferWriter::new();
 foo.serialize(&mut buf);
 

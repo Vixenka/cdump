@@ -37,7 +37,7 @@ unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
     buf.align::<Bar>();
 
     /// Read next data as pointer without propagate read count.
-    let ptr = buf.read_mut::<c_void>();
+    let ptr = buf.as_mut_ptr_at::<c_void>(buf.get_read());
 
     // Cast pointer to our type.
     let dst = &mut *(ptr as *mut Bar);

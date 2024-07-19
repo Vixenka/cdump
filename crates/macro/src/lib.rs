@@ -23,10 +23,10 @@ pub fn c_serialize_derive(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     proc_macro::TokenStream::from(quote! {
         impl<T: ::cdump::CDumpWriter> ::cdump::CSerialize<T> for #name {
-            fn serialize(&self, buf: &mut T) {
+            unsafe fn serialize(&self, buf: &mut T) {
                 #validate_repr
 
-                buf.align::<Self>();
+                ::cdump::internal::align_writer::<T, Self>(buf);
                 let start_index = buf.len();
                 #push_copy
                 unsafe { self.serialize_without_shallow_copy(buf, start_index); }
@@ -124,7 +124,7 @@ fn write_deep_fields_inner(
                 let len = self.#len as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
-                buf.align::<#inner_path>();
+                ::cdump::internal::align_writer::<T, #inner_path>(buf);
                 let array_start_index = buf.len();
                 buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, size * len));
 
@@ -166,7 +166,7 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
 
 fn align_and_read_copy() -> TokenStream {
     quote! {
-        buf.align::<Self>();
+        ::cdump::internal::align_reader::<T, Self>(buf);
         let size = ::std::mem::size_of::<Self>();
         std::ptr::copy_nonoverlapping(buf.read_slice(size).as_ptr(), dst as *mut _ as *mut u8, size);
     }
@@ -230,7 +230,7 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
                         },
                         quote! { 0 },
                         quote! {
-                            let ptr = buf.get_mut(array_start_index + size * i);
+                            let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
                             *ptr = buf.read_slice(*ptr as usize).as_ptr() as *const ::std::ffi::c_char;
                         },
                     )
@@ -242,7 +242,7 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
                 let len = dst.#len as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
-                buf.align::<#inner_path>();
+                ::cdump::internal::align_reader::<T, #inner_path>(buf);
                 let array_start_index = buf.get_read();
 
                 #prefix

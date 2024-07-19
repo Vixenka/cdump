@@ -39,7 +39,7 @@ fn dynamic() {
     };
 
     let mut buf = cdump::CDumpBufferWriter::new();
-    obj.serialize(&mut buf);
+    unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { Foo::deserialize(&mut reader) };
@@ -75,7 +75,7 @@ unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) {
 
 unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
     buf.align::<DynamicType>();
-    let ptr = buf.read_mut::<c_void>();
+    let ptr = buf.as_mut_ptr_at::<c_void>(buf.get_read());
     let ty = *(ptr as *const DynamicType);
     match ty {
         DynamicType::Bar => {

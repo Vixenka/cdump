@@ -65,7 +65,7 @@ fn array() {
     };
 
     let mut buf = cdump::CDumpBufferWriter::new();
-    obj.serialize(&mut buf);
+    unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { DeepFoo::deserialize(&mut reader) };
