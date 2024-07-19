@@ -17,7 +17,7 @@ fn cstring() {
         text: text.as_ptr(),
     };
 
-    let mut buf = cdump::CDumpBufferWriter::new();
+    let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();

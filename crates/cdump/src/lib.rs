@@ -1,9 +1,11 @@
 #![doc = include_str!("../../../README.md")]
 
-use std::{
-    cell::UnsafeCell,
-    mem::{self, MaybeUninit},
-};
+use std::mem::{self, MaybeUninit};
+
+#[cfg(feature = "builtin-buffer")]
+use aligned_vec::AVec;
+#[cfg(feature = "builtin-buffer")]
+use std::cell::UnsafeCell;
 
 pub use cdump_macro::{CDeserialize, CSerialize};
 pub use memoffset::offset_of;
@@ -110,13 +112,17 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
 }
 
 /// Simple buffer writer for CSerialization.
+#[cfg(feature = "builtin-buffer")]
 pub struct CDumpBufferWriter {
-    data: Vec<u8>,
+    data: AVec<u8>,
 }
 
+#[cfg(feature = "builtin-buffer")]
 impl CDumpBufferWriter {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
+    pub fn new(align: usize) -> Self {
+        Self {
+            data: AVec::new(align),
+        }
     }
 
     pub fn into_reader(self) -> CDumpBufferReader {
@@ -124,18 +130,14 @@ impl CDumpBufferWriter {
     }
 }
 
-impl Default for CDumpBufferWriter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<CDumpBufferWriter> for Vec<u8> {
+#[cfg(feature = "builtin-buffer")]
+impl From<CDumpBufferWriter> for AVec<u8> {
     fn from(writer: CDumpBufferWriter) -> Self {
         writer.data
     }
 }
 
+#[cfg(feature = "builtin-buffer")]
 unsafe impl CDumpWriter for CDumpBufferWriter {
     fn align<T>(&mut self) {
         let m = self.data.len() % mem::align_of::<T>();
@@ -163,13 +165,15 @@ unsafe impl CDumpWriter for CDumpBufferWriter {
 }
 
 /// Simple buffer reader for CDeserialization.
+#[cfg(feature = "builtin-buffer")]
 pub struct CDumpBufferReader {
-    data: UnsafeCell<Vec<u8>>,
+    data: UnsafeCell<AVec<u8>>,
     read: usize,
 }
 
+#[cfg(feature = "builtin-buffer")]
 impl CDumpBufferReader {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new(data: AVec<u8>) -> Self {
         Self {
             data: UnsafeCell::new(data),
             read: 0,
@@ -177,6 +181,7 @@ impl CDumpBufferReader {
     }
 }
 
+#[cfg(feature = "builtin-buffer")]
 unsafe impl CDumpReader for CDumpBufferReader {
     fn align<T>(&mut self) {
         let m = self.read % mem::align_of::<T>();

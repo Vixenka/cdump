@@ -4,4 +4,4 @@ edition = "2021"
 publish = false
 
 [dependencies]
-cdump.workspace = true
+cdump = { workspace = true, features = ["builtin-buffer"] }

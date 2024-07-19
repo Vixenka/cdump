@@ -55,8 +55,9 @@ let foo = Foo {
 };
 
 // Serialize and deserialize
-let mut buf = cdump::CDumpBufferWriter::new();
-foo.serialize(&mut buf);
+let mut buf = cdump::CDumpBufferWriter::new(16);
+// SAFETY: we upper initialize whole struct in this scope, which prevent data from dropping
+unsafe { foo.serialize(&mut buf); }
 
 let mut reader = buf.into_reader();
 // SAFETY: reader's buffer contains Foo what is guaranteed above 

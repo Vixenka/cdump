@@ -10,7 +10,13 @@ readme = "README.md"
 repository = "https://github.com/Vixenka/cdump"
 license = "MIT"
 
+[features]
+default = ["builtin-buffer"]
+builtin-buffer = ["dep:aligned-vec"]
+
 [dependencies]
 libc.workspace = true
 memoffset.workspace = true
 cdump-macro.workspace = true
+
+aligned-vec = { workspace = true, optional = true }

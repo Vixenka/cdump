@@ -45,7 +45,7 @@ fn deep() {
         d: &bar2,
     };
 
-    let mut buf = cdump::CDumpBufferWriter::new();
+    let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
@@ -89,7 +89,7 @@ fn very_deep() {
         b: &mut deep,
     };
 
-    let mut buf = cdump::CDumpBufferWriter::new();
+    let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
