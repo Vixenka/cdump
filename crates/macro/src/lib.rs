@@ -150,14 +150,14 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
 
     proc_macro::TokenStream::from(quote! {
         impl<T: ::cdump::CDumpReader> ::cdump::CDeserialize<T> for #name {
-            unsafe fn deserialize_to(buf: &mut T, dst: &mut Self) {
+            unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
                 #validate_repr
 
                 #align_and_read_copy
                 Self::deserialize_to_without_shallow_copy(buf, dst);
             }
 
-            unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: &mut Self) {
+            unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self) {
                 #deep_fields
             }
         }
@@ -168,7 +168,7 @@ fn align_and_read_copy() -> TokenStream {
     quote! {
         ::cdump::internal::align_reader::<T, Self>(buf);
         let size = ::std::mem::size_of::<Self>();
-        std::ptr::copy_nonoverlapping(buf.read_slice(size).as_ptr(), dst as *mut _ as *mut u8, size);
+        std::ptr::copy_nonoverlapping(buf.read_raw_slice(size), dst as *mut _ as *mut u8, size);
     }
 }
 
@@ -186,10 +186,10 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
     let field_ident = &field.ident;
     let ident = match ptr_offset == 0 {
         true => quote! {
-            dst.#field_ident
+            (*dst).#field_ident
         },
         false => quote! {
-            dst.#field_ident.add(#ptr_offset)
+            (*dst).#field_ident.add(#ptr_offset)
         },
     };
     let path = &field.path;
@@ -202,7 +202,7 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
         }
         FieldType::CString => {
             quote! {
-                #ident = buf.read_slice(#ident as usize).as_ptr() as *const ::std::ffi::c_char;
+                #ident = buf.read_raw_slice(#ident as usize) as *const ::std::ffi::c_char;
             }
         }
         FieldType::Dynamic(_, deserializer) => quote! {
@@ -226,12 +226,12 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
 
                     (
                         quote! {
-                            #ident = buf.read_slice(size * len).as_ptr() as *const *const ::std::ffi::c_char;
+                            #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_char;
                         },
                         quote! { 0 },
                         quote! {
                             let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
-                            *ptr = buf.read_slice(*ptr as usize).as_ptr() as *const ::std::ffi::c_char;
+                            *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
                         },
                     )
                 }
@@ -239,7 +239,7 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
             };
 
             quote! {
-                let len = dst.#len as usize;
+                let len = (*dst).#len as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
                 ::cdump::internal::align_reader::<T, #inner_path>(buf);

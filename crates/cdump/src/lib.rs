@@ -46,10 +46,13 @@ pub unsafe trait CDumpWriter {
 pub unsafe trait CDumpReader {
     /// Align the buffer to the `T`.
     fn align<T>(&mut self);
-    /// Read the slice from the buffer.
-    fn read_slice(&mut self, len: usize) -> &[u8];
     /// Adds the length to the current position.
     fn add_read(&mut self, len: usize);
+
+    /// Read raw slice from the buffer, and returns the pointer to start of it.
+    /// # Safety
+    /// Caller must ensure that the `len` will not exceed the buffer length.
+    unsafe fn read_raw_slice(&mut self, len: usize) -> *const u8;
 
     /// Read mutable reference to `T` which is located at index, without propagating the read count.
     /// # Safety
@@ -82,12 +85,12 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     /// Field `dst` can be uninitialized, then reading from it is undefined behavior.
-    unsafe fn deserialize_to(buf: &mut T, dst: &mut Self);
+    unsafe fn deserialize_to(buf: &mut T, dst: *mut Self);
 
     /// Deserializes the data from the buffer to the destination, ommiting the shallow copy.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of deep part of `Self`.
-    unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: &mut Self);
+    unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self);
 
     /// Deserialize the data from the buffer to the uninitialized memory.
     /// # Safety
@@ -191,10 +194,11 @@ unsafe impl CDumpReader for CDumpBufferReader {
         debug_assert_eq!(0, self.read % mem::align_of::<T>());
     }
 
-    fn read_slice(&mut self, len: usize) -> &[u8] {
-        let slice = &self.data.get_mut()[self.read..self.read + len];
+    unsafe fn read_raw_slice(&mut self, len: usize) -> *const u8 {
+        let s = unsafe { &*self.data.get() };
+        let ptr = s.as_ptr().add(self.read);
         self.read += len;
-        slice
+        ptr
     }
 
     fn add_read(&mut self, len: usize) {
@@ -203,7 +207,7 @@ unsafe impl CDumpReader for CDumpBufferReader {
 
     unsafe fn as_mut_ptr_at<T>(&self, index: usize) -> *mut T {
         let s = &mut *self.data.get();
-        (&mut s[index]) as *mut u8 as *mut T
+        s.as_mut_ptr().add(index) as *mut T
     }
 
     fn get_read(&self) -> usize {

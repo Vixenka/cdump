@@ -34,7 +34,7 @@ where
     T2: crate::CDeserialize<T1>,
 {
     buf.align::<T2>();
-    let reference = &mut *buf.as_mut_ptr_at::<T2>(buf.get_read());
+    let reference = buf.as_mut_ptr_at::<T2>(buf.get_read());
     buf.add_read(::std::mem::size_of::<T2>());
     CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
     reference
@@ -49,7 +49,7 @@ where
     T1: crate::CDumpReader,
     T2: crate::CDeserialize<T1>,
 {
-    let reference = &mut *buf.as_mut_ptr_at(index);
+    let reference = buf.as_mut_ptr_at(index);
     CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
     reference
 }
