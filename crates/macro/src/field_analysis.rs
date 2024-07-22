@@ -111,9 +111,9 @@ fn extract_ptr(ty: &Type) -> (&Type, usize) {
 fn get_raw_field_type(ty: &Type) -> RawFieldType {
     match ty {
         Type::Path(path) => {
-            if path.path.is_ident("c_char") {
+            if path.path.is_ident("c_char") || path.path.is_ident("std::ffi::c_char") {
                 return RawFieldType::CString;
-            } else if path.path.is_ident("c_void") {
+            } else if path.path.is_ident("c_void") || path.path.is_ident("std::ffi::c_void") {
                 return RawFieldType::Dynamic;
             }
             RawFieldType::Reference
