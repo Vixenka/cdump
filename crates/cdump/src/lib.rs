@@ -157,6 +157,26 @@ impl<T: CDumpReader> CDeserialize<T> for u64 {
     unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
 }
 
+impl<T: CDumpWriter> CSerialize<T> for f32 {
+    unsafe fn serialize(&self, buf: &mut T) {
+        buf.push_slice(&self.to_ne_bytes());
+    }
+
+    unsafe fn serialize_without_shallow_copy(&self, _buf: &mut T, _start_index: usize) {}
+}
+
+impl<T: CDumpReader> CDeserialize<T> for f32 {
+    unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
+        ptr::copy_nonoverlapping(
+            buf.read_raw_slice(mem::size_of::<Self>()),
+            dst as *mut u8,
+            mem::size_of::<Self>(),
+        )
+    }
+
+    unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
+}
+
 /// Simple buffer writer for CSerialization.
 #[cfg(feature = "builtin-buffer")]
 pub struct CDumpBufferWriter {

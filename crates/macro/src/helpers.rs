@@ -1,7 +1,26 @@
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::spanned::Spanned;
 use syn::{AttrStyle, Attribute, Error, Path};
+
+pub fn is_primitive_type(path: &TokenStream) -> bool {
+    let path = path.to_string();
+    path == "u8"
+        || path == "u16"
+        || path == "u32"
+        || path == "u64"
+        || path == "u128"
+        || path == "usize"
+        || path == "i8"
+        || path == "i16"
+        || path == "i32"
+        || path == "i64"
+        || path == "i128"
+        || path == "isize"
+        || path == "f32"
+        || path == "f64"
+        || path == "bool"
+}
 
 pub fn validate_repr(attrs: &[Attribute], repr: &str, span: Span) -> Result<(), Error> {
     let mut index = None;

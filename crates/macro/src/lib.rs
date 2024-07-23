@@ -1,8 +1,8 @@
 use field_analysis::{Field, FieldType};
-use helpers::{validate_repr, ErrorExt};
+use helpers::{is_primitive_type, validate_repr, ErrorExt};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
+use syn::{parse_macro_input, spanned::Spanned, DeriveInput, TypePath};
 
 mod field_analysis;
 mod helpers;
@@ -100,39 +100,52 @@ fn write_deep_fields_inner(
         },
         FieldType::Array(len, inner) => {
             let mut inner_path = inner.path.to_token_stream();
-            let inner = match inner.ty {
-                FieldType::Reference => {
-                    let ident = &inner.ident;
-                    quote! {
-                        ::cdump::CSerialize::serialize_without_shallow_copy(&*self.#ident.add(i), buf, array_start_index + size * i);
-                    }
-                }
-                FieldType::CString => {
-                    inner_path = quote! { *const #inner_path };
+            if let FieldType::CString = inner.ty {
+                inner_path = quote! { *const #inner_path };
+            }
 
-                    quote! {
-                        let ptr = *#ident.add(i);
-                        let len = ::cdump::internal::libc_strlen(ptr) + 1;
-                        ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
-                        buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
-                    }
-                }
-                _ => unimplemented!("2D arrays"),
-            };
-
-            quote! {
+            let mut result = quote! {
                 let len = self.#len as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
                 ::cdump::internal::align_writer::<T, #inner_path>(buf);
                 let array_start_index = buf.len();
                 buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, size * len));
+            };
 
-                for i in 0..len {
-                    #inner
-                }
+            if !is_primitive_type(&inner_path) {
+                let inner = get_inner_of_array_serialize(inner, &ident);
+                result = quote! {
+                    #result
+
+                    for i in 0..len {
+                        #inner
+                    }
+                };
+            }
+
+            result
+        }
+    }
+}
+
+fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> TokenStream {
+    match inner.ty {
+        FieldType::Reference => {
+            let ident = &inner.ident;
+            quote! {
+                ::cdump::CSerialize::serialize_without_shallow_copy(&*self.#ident.add(i), buf, array_start_index + size * i);
             }
         }
+        FieldType::CString => {
+            quote! {
+                let ptr = *#ident.add(i);
+                let len = ::cdump::internal::libc_strlen(ptr) + 1;
+                ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
+                buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
+            }
+        }
+        _ => unimplemented!("2D arrays"),
     }
 }
 
@@ -210,46 +223,66 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
         },
         FieldType::Array(len, inner) => {
             let mut inner_path = inner.path.to_token_stream();
-            let (prefix, start, inner) = match inner.ty {
-                FieldType::Reference => (
-                    quote! {
-                        buf.add_read(size * len);
-                        #ident = ::cdump::internal::deserialize_shallow_copied_at(buf, array_start_index);
-                    },
-                    quote! { 1 },
-                    quote! {
-                        _ = ::cdump::internal::deserialize_shallow_copied_at::<T, #path>(buf, array_start_index + size * i);
-                    },
-                ),
-                FieldType::CString => {
-                    inner_path = quote! { *const #inner_path };
+            if let FieldType::CString = inner.ty {
+                inner_path = quote! { *const #inner_path };
+            }
 
-                    (
-                        quote! {
-                            #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_char;
-                        },
-                        quote! { 0 },
-                        quote! {
-                            let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
-                            *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
-                        },
-                    )
-                }
-                _ => unimplemented!("2D arrays"),
-            };
-
-            quote! {
+            let mut result = quote! {
                 let len = (*dst).#len as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
                 ::cdump::internal::align_reader::<T, #inner_path>(buf);
-                let array_start_index = buf.get_read();
+            };
 
-                #prefix
-                for i in #start..len {
-                    #inner
-                }
+            if !is_primitive_type(&inner_path) {
+                let (prefix, start, inner) = get_inner_of_array_deserialize(inner, &ident, path);
+                result = quote! {
+                    let array_start_index = buf.get_read();
+                    #result
+
+                    #prefix
+                    for i in #start..len {
+                        #inner
+                    }
+                };
+            } else {
+                result = quote! {
+                    #result
+                    #ident = buf.read_raw_slice(size * len) as *const #inner_path;
+                };
             }
+
+            result
         }
+    }
+}
+
+fn get_inner_of_array_deserialize(
+    inner: &Field,
+    ident: &TokenStream,
+    path: &Option<TypePath>,
+) -> (TokenStream, TokenStream, TokenStream) {
+    match inner.ty {
+        FieldType::Reference => (
+            quote! {
+                buf.add_read(size * len);
+                #ident = ::cdump::internal::deserialize_shallow_copied_at(buf, array_start_index);
+            },
+            quote! { 1 },
+            quote! {
+                _ = ::cdump::internal::deserialize_shallow_copied_at::<T, #path>(buf, array_start_index + size * i);
+            },
+        ),
+        FieldType::CString => (
+            quote! {
+                #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_char;
+            },
+            quote! { 0 },
+            quote! {
+                let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
+                *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
+            },
+        ),
+        _ => unimplemented!("2D arrays"),
     }
 }

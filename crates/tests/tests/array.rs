@@ -75,3 +75,32 @@ fn array() {
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
     assert_eq!(unsafe { *obj.b.add(1) }, unsafe { *copy.b.add(1) });
 }
+
+#[derive(Debug, CSerialize, CDeserialize)]
+#[repr(C)]
+struct ArrayOfPrimitives {
+    len: u32,
+    #[cdump(array(len = len))]
+    b: *const u16,
+}
+
+#[test]
+fn of_primitives() {
+    let array: [u16; 5] = [45644, 2566, 3345, 8854, 12345];
+    let obj = ArrayOfPrimitives {
+        len: array.len() as u32,
+        b: array.as_ptr(),
+    };
+
+    let mut buf = cdump::CDumpBufferWriter::new(16);
+    unsafe { obj.serialize(&mut buf) };
+
+    let mut reader = buf.into_reader();
+    let copy = unsafe { ArrayOfPrimitives::deserialize(&mut reader) };
+
+    assert_eq!(obj.len, copy.len);
+    assert_ne!(obj.b, copy.b);
+    for i in 0..array.len() {
+        assert_eq!(unsafe { *obj.b.add(i) }, unsafe { *copy.b.add(i) });
+    }
+}
