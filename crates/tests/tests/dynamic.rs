@@ -63,7 +63,7 @@ fn dynamic() {
 }
 
 unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) {
-    buf.align::<DynamicType>();
+    buf.align::<DynamicBar>();
     let ty = *(obj as *const DynamicType);
     match ty {
         DynamicType::Bar => {
@@ -74,7 +74,7 @@ unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) {
 }
 
 unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
-    buf.align::<DynamicType>();
+    buf.align::<DynamicBar>();
     let ptr = buf.as_mut_ptr_at::<c_void>(buf.get_read());
     let ty = *(ptr as *const DynamicType);
     match ty {
@@ -85,4 +85,61 @@ unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
         }
     }
     ptr
+}
+
+#[derive(Debug, CSerialize, CDeserialize)]
+#[repr(C)]
+struct ArrayOfDynamicTypes {
+    len: u8,
+    #[cdump(array(len = self.len))]
+    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer))]
+    data: *const *const c_void,
+}
+
+#[test]
+fn array_of_dynamic_types() {
+    let text1 = c"Never coming back!";
+    let text2 = c"Hello world!";
+
+    let array = [
+        DynamicBar {
+            ty: DynamicType::Bar,
+            text: text1.as_ptr(),
+        },
+        DynamicBar {
+            ty: DynamicType::Bar,
+            text: text2.as_ptr(),
+        },
+    ];
+    let ptrs = array
+        .iter()
+        .map(|x| x as *const _ as *const c_void)
+        .collect::<Vec<_>>();
+
+    let obj = ArrayOfDynamicTypes {
+        len: ptrs.len() as u8,
+        data: ptrs.as_ptr(),
+    };
+
+    let mut buf = cdump::CDumpBufferWriter::new(16);
+    unsafe { obj.serialize(&mut buf) };
+
+    let mut reader = buf.into_reader();
+    let copy = unsafe { ArrayOfDynamicTypes::deserialize(&mut reader) };
+
+    assert_eq!(obj.len, copy.len);
+    assert_ne!(obj.data, copy.data);
+    for i in 0..ptrs.len() {
+        assert_ne!(unsafe { *obj.data.add(i) }, unsafe { *copy.data.add(i) });
+        unsafe {
+            assert_eq!(
+                (**(obj.data.add(i) as *const *const DynamicBar)).ty,
+                (**(copy.data.add(i) as *const *const DynamicBar)).ty
+            );
+            assert_eq!(
+                CStr::from_ptr((**(obj.data.add(i) as *const *const DynamicBar)).text),
+                CStr::from_ptr((**(copy.data.add(i) as *const *const DynamicBar)).text)
+            );
+        }
+    }
 }

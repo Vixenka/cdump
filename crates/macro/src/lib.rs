@@ -101,11 +101,7 @@ fn write_deep_fields_inner(
         },
         FieldType::Array(len, inner) => {
             let inner_path = inner.path.to_token_stream();
-            let alignment_type = match inner.ty {
-                // Align two levels of pointers to size of pointer
-                FieldType::CString | FieldType::Reference => quote! { usize },
-                _ => inner_path.clone(),
-            };
+            let alignment_type = get_alignment_type(inner);
 
             let mut result = quote! {
                 let len = (#len) as usize;
@@ -139,7 +135,7 @@ fn write_deep_fields_inner(
 }
 
 fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> TokenStream {
-    match inner.ty {
+    match &inner.ty {
         FieldType::Plain => {
             let ident = &inner.ident;
             quote! {
@@ -154,6 +150,9 @@ fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> TokenStre
             let len = ::cdump::internal::libc_strlen(ptr) + 1;
             ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
             buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
+        },
+        FieldType::Dynamic(serializer, _) => quote! {
+            #serializer(buf, *#ident.add(i));
         },
         _ => unimplemented!("2D arrays"),
     }
@@ -239,11 +238,7 @@ fn read_deep_fields_inner(
         },
         FieldType::Array(len, inner) => {
             let inner_path = inner.path.to_token_stream();
-            let alignment_type = match inner.ty {
-                // Align two levels of pointers to size of pointer
-                FieldType::CString | FieldType::Reference => quote! { usize },
-                _ => inner_path.clone(),
-            };
+            let alignment_type = get_alignment_type(inner);
 
             let len_function = Ident::new(
                 &format!(
@@ -304,7 +299,7 @@ fn get_inner_of_array_deserialize(
     ident: &TokenStream,
     path: &Option<TypePath>,
 ) -> (TokenStream, TokenStream, TokenStream) {
-    match inner.ty {
+    match &inner.ty {
         FieldType::Plain => (
             quote! {
                 buf.add_read(size * len);
@@ -335,6 +330,26 @@ fn get_inner_of_array_deserialize(
                 *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
             },
         ),
+        FieldType::Dynamic(_, deserializer) => (
+            quote! {
+                #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_void;
+            },
+            quote! { 0 },
+            quote! {
+                let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
+                *ptr = #deserializer(buf);
+            },
+        ),
         _ => unimplemented!("2D arrays"),
+    }
+}
+
+fn get_alignment_type(inner: &Field) -> TokenStream {
+    match inner.ty {
+        // Align two levels of pointers to size of pointer
+        FieldType::CString | FieldType::Reference | FieldType::Dynamic(_, _) => {
+            quote! { usize }
+        }
+        _ => inner.path.to_token_stream(),
     }
 }
