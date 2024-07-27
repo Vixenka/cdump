@@ -6,7 +6,7 @@ use cdump::{CDeserialize, CSerialize};
 #[repr(C)]
 struct Foo {
     len: u32,
-    #[cdump(array(len = len))]
+    #[cdump(array(len = self.len))]
     text: *const *const c_char,
 }
 

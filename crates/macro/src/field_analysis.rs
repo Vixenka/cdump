@@ -1,5 +1,5 @@
 use darling::{ast::Data, FromDeriveInput};
-use syn::{spanned::Spanned, DeriveInput, Error, Ident, Type, TypePath};
+use syn::{spanned::Spanned, DeriveInput, Error, Expr, Ident, Type, TypePath};
 
 pub struct Field {
     pub ident: Option<Ident>,
@@ -10,7 +10,7 @@ pub struct Field {
 pub enum FieldType {
     Reference,
     CString,
-    Array(Ident, Box<Field>),
+    Array(Expr, Box<Field>),
     Dynamic(Ident, Ident),
 }
 
@@ -138,7 +138,7 @@ struct FieldReceiver {
 
 #[derive(darling::FromMeta)]
 struct ArrayReceiver {
-    len: Ident,
+    len: Expr,
 }
 
 #[derive(darling::FromMeta)]

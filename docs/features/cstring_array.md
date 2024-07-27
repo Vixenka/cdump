@@ -9,7 +9,7 @@ Create valid memory of C strings, create array with pointers to that C strings, 
 #[repr(C)]
 struct Foo {
     length_of_texts: u16,
-    #[cdump(array(len = length_of_texts))]
+    #[cdump(array(len = self.length_of_texts))]
     texts: *const *const c_char,
 }
 ```

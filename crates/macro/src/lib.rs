@@ -1,8 +1,8 @@
 use field_analysis::{Field, FieldType};
 use helpers::{is_primitive_type, validate_repr, ErrorExt};
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, spanned::Spanned, DeriveInput, TypePath};
+use syn::{parse_macro_input, spanned::Spanned, DeriveInput, Ident, TypePath};
 
 mod field_analysis;
 mod helpers;
@@ -105,7 +105,7 @@ fn write_deep_fields_inner(
             }
 
             let mut result = quote! {
-                let len = self.#len as usize;
+                let len = (#len) as usize;
                 let size = ::std::mem::size_of::<#inner_path>();
 
                 ::cdump::internal::align_writer::<T, #inner_path>(buf);
@@ -157,7 +157,7 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
 
     let align_and_read_copy = align_and_read_copy();
     let deep_fields = match field_analysis::get_fields(&ast) {
-        Ok(fields) => read_deep_fields(fields),
+        Ok(fields) => read_deep_fields(fields, &name),
         Err(err) => err.to_compile_error(),
     };
 
@@ -185,17 +185,22 @@ fn align_and_read_copy() -> TokenStream {
     }
 }
 
-fn read_deep_fields(fields: Vec<Field>) -> TokenStream {
+fn read_deep_fields(fields: Vec<Field>, name: &proc_macro2::Ident) -> TokenStream {
     let mut quotes = Vec::new();
 
-    for field in fields {
-        quotes.push(read_deep_fields_inner(&field, 0));
+    for (index, field) in fields.iter().enumerate() {
+        quotes.push(read_deep_fields_inner(field, 0, name, index));
     }
 
     quotes.into_iter().collect()
 }
 
-fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
+fn read_deep_fields_inner(
+    field: &Field,
+    ptr_offset: usize,
+    name: &proc_macro2::Ident,
+    field_index: usize,
+) -> TokenStream {
     let field_ident = &field.ident;
     let ident = match ptr_offset == 0 {
         true => quote! {
@@ -227,8 +232,24 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
                 inner_path = quote! { *const #inner_path };
             }
 
+            let len_function = Ident::new(
+                &format!(
+                    "do_not_use_cdump_internal_function_len_of_array_at_index_{}",
+                    field_index
+                ),
+                Span::call_site(),
+            );
+
             let mut result = quote! {
-                let len = (*dst).#len as usize;
+                impl #name {
+                    #[inline]
+                    #[doc(hidden)]
+                    fn #len_function(&self) -> usize {
+                        (#len) as usize
+                    }
+                }
+
+                let len = (*dst).#len_function();
                 let size = ::std::mem::size_of::<#inner_path>();
 
                 ::cdump::internal::align_reader::<T, #inner_path>(buf);
@@ -237,8 +258,8 @@ fn read_deep_fields_inner(field: &Field, ptr_offset: usize) -> TokenStream {
             if !is_primitive_type(&inner_path) {
                 let (prefix, start, inner) = get_inner_of_array_deserialize(inner, &ident, path);
                 result = quote! {
-                    let array_start_index = buf.get_read();
                     #result
+                    let array_start_index = buf.get_read();
 
                     #prefix
                     for i in #start..len {

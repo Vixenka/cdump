@@ -30,7 +30,7 @@ use cdump::{CSerialize, CDeserialize};
 struct Foo {
     text: *const c_char,
     len_of_bars: u32,
-    #[cdump(array(len = len_of_bars))]
+    #[cdump(array(len = self.len_of_bars))]
     bars: *const Bar,
 }
 

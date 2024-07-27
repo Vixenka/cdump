@@ -9,7 +9,7 @@ use cdump::{CDeserialize, CSerialize};
 #[repr(C)]
 struct DeepFoo {
     len: u32,
-    #[cdump(array(len = len))]
+    #[cdump(array(len = self.len))]
     b: *const ShallowBar,
     c: f64,
 }
@@ -80,7 +80,7 @@ fn array() {
 #[repr(C)]
 struct ArrayOfPrimitives {
     len: u32,
-    #[cdump(array(len = len))]
+    #[cdump(array(len = self.len))]
     b: *const u16,
 }
 
@@ -97,6 +97,35 @@ fn of_primitives() {
 
     let mut reader = buf.into_reader();
     let copy = unsafe { ArrayOfPrimitives::deserialize(&mut reader) };
+
+    assert_eq!(obj.len, copy.len);
+    assert_ne!(obj.b, copy.b);
+    for i in 0..array.len() {
+        assert_eq!(unsafe { *obj.b.add(i) }, unsafe { *copy.b.add(i) });
+    }
+}
+
+#[derive(Debug, CSerialize, CDeserialize)]
+#[repr(C)]
+struct ArrayWithExpressionInLen {
+    len: u8,
+    #[cdump(array(len = self.len as usize / std::mem::size_of::<u32>()))]
+    b: *const u32,
+}
+
+#[test]
+fn expression_in_len() {
+    let array: [u32; 5] = [567353453, 2352623, 457345353, 23525235, 2384279479];
+    let obj = ArrayWithExpressionInLen {
+        len: (array.len() * std::mem::size_of::<u32>()) as u8,
+        b: array.as_ptr(),
+    };
+
+    let mut buf = cdump::CDumpBufferWriter::new(16);
+    unsafe { obj.serialize(&mut buf) };
+
+    let mut reader = buf.into_reader();
+    let copy = unsafe { ArrayWithExpressionInLen::deserialize(&mut reader) };
 
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.b, copy.b);
