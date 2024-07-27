@@ -8,6 +8,7 @@ pub struct Field {
 }
 
 pub enum FieldType {
+    Plain,
     Reference,
     CString,
     Array(Expr, Box<Field>),
@@ -48,7 +49,13 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
                         Box::new(Field {
                             ident: field.ident.clone(),
                             path,
-                            ty: fty,
+                            ty: match fty {
+                                FieldType::Reference => match ptr_level == 1 {
+                                    true => FieldType::Plain,
+                                    false => FieldType::Reference,
+                                },
+                                _ => fty,
+                            },
                         }),
                     ),
                     None => fty,
@@ -66,24 +73,17 @@ fn validate_field(
     field: &FieldReceiver,
 ) -> Result<(), Error> {
     if ptr_level != 1 {
-        if raw_ty == RawFieldType::CString {
-            if field.array.is_none() {
-                return Err(Error::new(
-                    field.ty.span(),
-                    "two levels of pointer in CString, requires field to be an array",
-                ));
-            }
-
-            if ptr_level > 2 {
-                return Err(Error::new(
-                    field.ty.span(),
-                    "more than two levels of pointer in CString is not supported",
-                ));
-            }
-        } else {
+        if field.array.is_none() {
             return Err(Error::new(
                 field.ty.span(),
-                "only one level of pointer is supported for a reference",
+                "two levels of pointer, requires field to be an array",
+            ));
+        }
+
+        if ptr_level > 2 {
+            return Err(Error::new(
+                field.ty.span(),
+                "more than two levels of pointer is not supported",
             ));
         }
     }

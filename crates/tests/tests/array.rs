@@ -133,3 +133,48 @@ fn expression_in_len() {
         assert_eq!(unsafe { *obj.b.add(i) }, unsafe { *copy.b.add(i) });
     }
 }
+
+#[derive(Debug, CSerialize, CDeserialize)]
+#[repr(C)]
+struct ArrayOfPointers {
+    len: u8,
+    #[cdump(array(len = self.len))]
+    data: *const *const ShallowBar,
+}
+
+#[test]
+fn array_of_pointers() {
+    let text1 = c"in that order of can-ing";
+    let text2 = c"bad habits";
+
+    let array = [
+        ShallowBar {
+            a: 4.7232552462,
+            b: text1.as_ptr(),
+            c: 1234515,
+        },
+        ShallowBar {
+            a: -235252.5572352,
+            b: text2.as_ptr(),
+            c: 1212385628,
+        },
+    ];
+    let ptrs: Vec<_> = array.iter().map(|x| x as *const _).collect();
+    let obj = ArrayOfPointers {
+        len: ptrs.len() as u8,
+        data: ptrs.as_ptr(),
+    };
+
+    let mut buf = cdump::CDumpBufferWriter::new(16);
+    unsafe { obj.serialize(&mut buf) };
+
+    let mut reader = buf.into_reader();
+    let copy = unsafe { ArrayOfPointers::deserialize(&mut reader) };
+
+    assert_eq!(obj.len, copy.len);
+    assert_ne!(obj.data, copy.data);
+    for i in 0..ptrs.len() {
+        assert_ne!(unsafe { obj.data.add(i) }, unsafe { copy.data.add(i) });
+        assert_eq!(unsafe { **obj.data.add(i) }, unsafe { **copy.data.add(i) });
+    }
+}
