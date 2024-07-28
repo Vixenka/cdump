@@ -99,3 +99,31 @@ fn very_deep() {
     assert_ne!(obj.b, copy.b);
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
 }
+
+#[derive(Debug, CSerialize, CDeserialize)]
+#[repr(C)]
+struct DeepOfPrimitives {
+    a: *mut u16,
+    b: *const isize,
+}
+
+#[test]
+fn deep_of_primitives() {
+    let mut a = 0x1234u16;
+    let b = 0x5678isize;
+    let obj = DeepOfPrimitives {
+        a: &mut a as *mut u16,
+        b: &b as *const isize,
+    };
+
+    let mut buf = cdump::CDumpBufferWriter::new(16);
+    unsafe { obj.serialize(&mut buf) };
+
+    let mut reader = buf.into_reader();
+    let copy = unsafe { DeepOfPrimitives::deserialize(&mut reader) };
+
+    assert_ne!(obj.a, copy.a);
+    assert_eq!(unsafe { *obj.a }, unsafe { *copy.a });
+    assert_ne!(obj.b, copy.b);
+    assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
+}

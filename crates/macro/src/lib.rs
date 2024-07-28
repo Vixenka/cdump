@@ -76,8 +76,16 @@ fn write_deep_fields_inner(
     match &field.ty {
         FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
         FieldType::Reference => {
-            quote! {
-                ::cdump::CSerialize::serialize(&*#ident, buf);
+            let path = field.path.to_token_stream();
+            if is_primitive_type(&path) {
+                quote! {
+                    ::cdump::internal::align_writer::<T, #path>(buf);
+                    buf.push_slice(&(*#ident).to_ne_bytes());
+                }
+            } else {
+                quote! {
+                    ::cdump::CSerialize::serialize(&*#ident, buf);
+                }
             }
         }
         FieldType::CString => {
@@ -93,7 +101,7 @@ fn write_deep_fields_inner(
             quote! {
                 let len = ::cdump::internal::libc_strlen(#ident) + 1;
                 #set_len
-                buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, len));
+                buf.push_slice(::std::slice::from_raw_parts(#ident as *const _ as *const u8, len));
             }
         }
         FieldType::Dynamic(serializer, _) => quote! {
@@ -109,7 +117,7 @@ fn write_deep_fields_inner(
 
                 ::cdump::internal::align_writer::<T, #alignment_type>(buf);
                 let array_start_index = buf.len();
-                buf.push_slice(std::slice::from_raw_parts(#ident as *const _ as *const u8, size * len));
+                buf.push_slice(::std::slice::from_raw_parts(#ident as *const _ as *const u8, size * len));
             };
 
             if !is_primitive_type(&inner_path) {
@@ -224,13 +232,21 @@ fn read_deep_fields_inner(
     match &field.ty {
         FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
         FieldType::Reference => {
-            quote! {
-                #ident = ::cdump::internal::deserialize_shallow_copied(buf);
+            let path = field.path.to_token_stream();
+            if is_primitive_type(&path) {
+                quote! {
+                    ::cdump::internal::align_reader::<T, #path>(buf);
+                    #ident = buf.read_raw_slice(::std::mem::size_of::<#path>()) as *mut #path;
+                }
+            } else {
+                quote! {
+                    #ident = ::cdump::internal::deserialize_shallow_copied(buf);
+                }
             }
         }
         FieldType::CString => {
             quote! {
-                #ident = buf.read_raw_slice(#ident as usize) as *const ::std::ffi::c_char;
+                #ident = buf.read_raw_slice(#ident as usize) as *mut ::std::ffi::c_char;
             }
         }
         FieldType::Dynamic(_, deserializer) => quote! {
