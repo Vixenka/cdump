@@ -39,7 +39,10 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                 &unsafe { self.#ident.as_ref() }
             },
             FieldType::CString => quote! {
-                &unsafe { ::std::ffi::CStr::from_ptr(self.#ident) }
+                &match self.#ident.is_null() {
+                    true => None,
+                    false => Some(unsafe { ::std::ffi::CStr::from_ptr(self.#ident) }),
+                }
             },
             FieldType::Array(len, ty) => {
                 let extension = match ty.ty {
@@ -47,7 +50,10 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                         .iter().map(|&ptr| ptr.as_ref()).collect::<Vec<_>>()
                     },
                     FieldType::CString => quote! {
-                        .iter().map(|&ptr| ::std::ffi::CStr::from_ptr(ptr)).collect::<Vec<_>>()
+                        .iter().map(|&ptr| match ptr.is_null() {
+                            true => None,
+                            false => Some(::std::ffi::CStr::from_ptr(ptr)),
+                        }).collect::<Vec<_>>()
                     },
                     _ => quote! {},
                 };
