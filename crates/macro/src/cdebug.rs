@@ -59,7 +59,9 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                     }
                 }
             }
-            FieldType::Dynamic(_, _, _) => todo!(),
+            FieldType::Dynamic(_, _, _) => quote! {
+                &"<debug not supported>"
+            },
         };
 
         quotes.push(quote! {

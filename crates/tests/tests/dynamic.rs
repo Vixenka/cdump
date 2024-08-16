@@ -3,9 +3,10 @@ use std::{
     mem,
 };
 
-use cdump::{CDeserialize, CDumpReader, CDumpWriter, CSerialize};
+use cdump::{CDebug, CDeserialize, CDumpReader, CDumpWriter, CSerialize};
+use tests::eval_debug;
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct Foo {
     a: u32,
@@ -14,7 +15,7 @@ struct Foo {
     text: *const c_char,
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct DynamicBar {
     ty: DynamicType,
@@ -41,12 +42,15 @@ fn dynamic() {
         text: text.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { Foo::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
     assert_ne!(obj.d, copy.d);
     unsafe {
