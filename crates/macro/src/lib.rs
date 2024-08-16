@@ -224,6 +224,14 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
                 Self::deserialize_to_without_shallow_copy(buf, dst);
             }
 
+            unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self {
+                ::cdump::internal::align_reader::<T, Self>(buf);
+                let reference = buf.as_mut_ptr_at(buf.get_read());
+                buf.add_read(::std::mem::size_of::<Self>());
+                Self::deserialize_to_without_shallow_copy(buf, reference);
+                &mut *reference
+            }
+
             unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self) {
                 #deep_fields
             }

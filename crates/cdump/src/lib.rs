@@ -1,9 +1,6 @@
 #![doc = include_str!("../../../README.md")]
 
-use std::{
-    mem::{self, MaybeUninit},
-    ptr,
-};
+use std::mem::{self, MaybeUninit};
 
 #[cfg(feature = "builtin-buffer")]
 use aligned_vec::AVec;
@@ -98,6 +95,18 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
     /// The caller must ensure that the next data in the buffer is a valid representation of deep part of `Self`.
     unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self);
 
+    /// Deserialize the data from the buffer, and returns the reference to object which memory is located in the buffer.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
+    unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self;
+
+    /// Deserialize the data from the buffer, and returns the reference to object which memory is located in the buffer.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
+    unsafe fn deserialize_ref(buf: &mut T) -> &Self {
+        Self::deserialize_ref_mut(buf)
+    }
+
     /// Deserialize the data from the buffer to the uninitialized memory.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
@@ -118,66 +127,6 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
         // Safety: `dst` should be fully initialized via [`deserialize_to_uninit`].
         unsafe { dst.assume_init() }
     }
-}
-
-impl<T: CDumpWriter> CSerialize<T> for u32 {
-    unsafe fn serialize(&self, buf: &mut T) {
-        buf.push_slice(&self.to_ne_bytes());
-    }
-
-    unsafe fn serialize_without_shallow_copy(&self, _buf: &mut T, _start_index: usize) {}
-}
-
-impl<T: CDumpReader> CDeserialize<T> for u32 {
-    unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
-        ptr::copy_nonoverlapping(
-            buf.read_raw_slice(mem::size_of::<Self>()),
-            dst as *mut u8,
-            mem::size_of::<Self>(),
-        )
-    }
-
-    unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
-}
-
-impl<T: CDumpWriter> CSerialize<T> for u64 {
-    unsafe fn serialize(&self, buf: &mut T) {
-        buf.push_slice(&self.to_ne_bytes());
-    }
-
-    unsafe fn serialize_without_shallow_copy(&self, _buf: &mut T, _start_index: usize) {}
-}
-
-impl<T: CDumpReader> CDeserialize<T> for u64 {
-    unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
-        ptr::copy_nonoverlapping(
-            buf.read_raw_slice(mem::size_of::<Self>()),
-            dst as *mut u8,
-            mem::size_of::<Self>(),
-        )
-    }
-
-    unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
-}
-
-impl<T: CDumpWriter> CSerialize<T> for f32 {
-    unsafe fn serialize(&self, buf: &mut T) {
-        buf.push_slice(&self.to_ne_bytes());
-    }
-
-    unsafe fn serialize_without_shallow_copy(&self, _buf: &mut T, _start_index: usize) {}
-}
-
-impl<T: CDumpReader> CDeserialize<T> for f32 {
-    unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
-        ptr::copy_nonoverlapping(
-            buf.read_raw_slice(mem::size_of::<Self>()),
-            dst as *mut u8,
-            mem::size_of::<Self>(),
-        )
-    }
-
-    unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
 }
 
 /// Simple buffer writer for CSerialization.
