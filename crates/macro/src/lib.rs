@@ -75,7 +75,7 @@ fn write_deep_fields_inner(
         },
     };
 
-    match &field.ty {
+    let result = match &field.ty {
         FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
         FieldType::Reference => {
             let path = field.path.to_token_stream();
@@ -148,6 +148,12 @@ fn write_deep_fields_inner(
             }
 
             result
+        }
+    };
+
+    quote! {
+        if !#ident.is_null() {
+            #result
         }
     }
 }
@@ -260,7 +266,7 @@ fn read_deep_fields_inner(
     };
     let path = &field.path;
 
-    match &field.ty {
+    let result = match &field.ty {
         FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
         FieldType::Reference => {
             let path = field.path.to_token_stream();
@@ -337,6 +343,12 @@ fn read_deep_fields_inner(
             }
 
             result
+        }
+    };
+
+    quote! {
+        if !#ident.is_null() {
+            #result
         }
     }
 }
