@@ -4,6 +4,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput, Error, Ident, TypePath};
 
+#[cfg(feature = "cdebug")]
+mod cdebug;
 mod field_analysis;
 mod helpers;
 
@@ -16,7 +18,7 @@ pub fn c_serialize_derive(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let name = ast.ident.clone();
     let push_copy = push_copy();
 
-    let deep_fields = match field_analysis::get_fields(&ast) {
+    let deep_fields = match field_analysis::get_fields(&ast, true) {
         Ok(fields) => write_deep_fields(fields),
         Err(err) => err.to_compile_error(),
     };
@@ -104,7 +106,7 @@ fn write_deep_fields_inner(
                 buf.push_slice(::std::slice::from_raw_parts(#ident as *const _ as *const u8, len));
             }
         }
-        FieldType::Dynamic(serializer, _) => quote! {
+        FieldType::Dynamic(serializer, _, _) => quote! {
             #serializer(buf, #ident);
         },
         FieldType::Array(len, inner) => {
@@ -121,7 +123,15 @@ fn write_deep_fields_inner(
             };
 
             if !is_primitive_type(&inner_path) {
-                let inner = get_inner_of_array_serialize(inner, &ident);
+                let (inner, push_shallow) = get_inner_of_array_serialize(inner, &ident);
+
+                if !push_shallow {
+                    result = quote! {
+                        let len = (#len) as usize;
+                        let mut read: usize = 0;
+                    }
+                }
+
                 result = quote! {
                     #result
 
@@ -142,25 +152,46 @@ fn write_deep_fields_inner(
     }
 }
 
-fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> TokenStream {
+fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> (TokenStream, bool) {
     match &inner.ty {
         FieldType::Plain => {
             let ident = &inner.ident;
-            quote! {
-                ::cdump::CSerialize::serialize_without_shallow_copy(&*self.#ident.add(i), buf, array_start_index + size * i);
-            }
+            (
+                quote! {
+                    ::cdump::CSerialize::serialize_without_shallow_copy(&*self.#ident.add(i), buf, array_start_index + size * i);
+                },
+                true,
+            )
         }
-        FieldType::Reference => quote! {
-            ::cdump::CSerialize::serialize(&**#ident.add(i), buf);
-        },
-        FieldType::CString => quote! {
-            let ptr = *#ident.add(i);
-            let len = ::cdump::internal::libc_strlen(ptr) + 1;
-            ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
-            buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
-        },
-        FieldType::Dynamic(serializer, _) => quote! {
-            #serializer(buf, *#ident.add(i));
+        FieldType::Reference => (
+            quote! {
+                ::cdump::CSerialize::serialize(&**#ident.add(i), buf);
+            },
+            true,
+        ),
+        FieldType::CString => (
+            quote! {
+                let ptr = *#ident.add(i);
+                let len = ::cdump::internal::libc_strlen(ptr) + 1;
+                ::cdump::internal::set_length_in_ptr(buf, array_start_index + size * i, len);
+                buf.push_slice(std::slice::from_raw_parts(ptr as *const _ as *const u8, len));
+            },
+            true,
+        ),
+        FieldType::Dynamic(serializer, _, ptr_level) => match ptr_level {
+            1 => (
+                quote! {
+                    read += #serializer(buf, #ident.byte_add(read));
+                },
+                false,
+            ),
+            2 => (
+                quote! {
+                    #serializer(buf, *#ident.add(i));
+                },
+                true,
+            ),
+            _ => unimplemented!("three or more level of pointer to dynamic type is unsupported"),
         },
         _ => unimplemented!("2D arrays"),
     }
@@ -173,7 +204,7 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
     let name = ast.ident.clone();
 
     let align_and_read_copy = align_and_read_copy();
-    let deep_fields = match field_analysis::get_fields(&ast) {
+    let deep_fields = match field_analysis::get_fields(&ast, true) {
         Ok(fields) => read_deep_fields(fields, &name),
         Err(err) => err.to_compile_error(),
     };
@@ -249,7 +280,7 @@ fn read_deep_fields_inner(
                 #ident = buf.read_raw_slice(#ident as usize) as *mut ::std::ffi::c_char;
             }
         }
-        FieldType::Dynamic(_, deserializer) => quote! {
+        FieldType::Dynamic(_, deserializer, _) => quote! {
             #ident = #deserializer(buf);
         },
         FieldType::Array(len, inner) => {
@@ -346,16 +377,28 @@ fn get_inner_of_array_deserialize(
                 *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
             },
         ),
-        FieldType::Dynamic(_, deserializer) => (
-            quote! {
-                #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_void;
-            },
-            quote! { 0 },
-            quote! {
-                let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
-                *ptr = #deserializer(buf);
-            },
-        ),
+        FieldType::Dynamic(_, deserializer, ptr_level) => match ptr_level {
+            1 => (
+                quote! {
+                    #ident = #deserializer(buf);
+                },
+                quote! { 1 },
+                quote! {
+                    _ = #deserializer(buf);
+                },
+            ),
+            2 => (
+                quote! {
+                    #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_void;
+                },
+                quote! { 0 },
+                quote! {
+                    let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
+                    *ptr = #deserializer(buf);
+                },
+            ),
+            _ => unimplemented!("three or more level of pointer to dynamic type is unsupported"),
+        },
         _ => unimplemented!("2D arrays"),
     }
 }
@@ -363,9 +406,15 @@ fn get_inner_of_array_deserialize(
 fn get_alignment_type(inner: &Field) -> TokenStream {
     match inner.ty {
         // Align two levels of pointers to size of pointer
-        FieldType::CString | FieldType::Reference | FieldType::Dynamic(_, _) => {
+        FieldType::CString | FieldType::Reference | FieldType::Dynamic(_, _, _) => {
             quote! { usize }
         }
         _ => inner.path.to_token_stream(),
     }
+}
+
+#[cfg(feature = "cdebug")]
+#[proc_macro_derive(CDebug, attributes(cdump))]
+pub fn c_debug_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    cdebug::c_debug_derive(input)
 }

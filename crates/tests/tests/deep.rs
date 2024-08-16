@@ -1,6 +1,7 @@
-use cdump::{CDeserialize, CSerialize};
+use cdump::{CDebug, CDeserialize, CSerialize};
+use tests::eval_debug;
 
-#[derive(Copy, Clone, Debug, CSerialize, CDeserialize)]
+#[derive(Copy, Clone, CSerialize, CDeserialize, CDebug)]
 #[repr(C)]
 struct DeepFoo {
     a: u8,
@@ -18,7 +19,7 @@ impl PartialEq for DeepFoo {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, CSerialize, CDeserialize)]
+#[derive(CDebug, Copy, Clone, PartialEq, CSerialize, CDeserialize)]
 #[repr(C)]
 struct ShallowBar {
     a: f64,
@@ -45,12 +46,15 @@ fn deep() {
         d: &bar2,
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { DeepFoo::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
     assert_ne!(obj.b, copy.b);
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
@@ -59,7 +63,7 @@ fn deep() {
     assert_eq!(unsafe { *obj.d }, unsafe { *copy.d });
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct VeryDeepFoo {
     a: u8,
@@ -89,18 +93,21 @@ fn very_deep() {
         b: &mut deep,
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { VeryDeepFoo::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
     assert_ne!(obj.b, copy.b);
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct DeepOfPrimitives {
     a: *mut u16,
@@ -116,12 +123,15 @@ fn deep_of_primitives() {
         b: &b as *const isize,
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { DeepOfPrimitives::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_ne!(obj.a, copy.a);
     assert_eq!(unsafe { *obj.a }, unsafe { *copy.a });
     assert_ne!(obj.b, copy.b);

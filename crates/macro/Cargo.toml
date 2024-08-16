@@ -4,6 +4,9 @@ edition = "2021"
 version = "0.1.0"
 publish = false
 
+[features]
+cdebug = []
+
 [dependencies]
 syn.workspace = true
 quote.workspace = true

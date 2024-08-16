@@ -1,8 +1,9 @@
 use std::ffi::{c_char, CStr};
 
-use cdump::{CDeserialize, CSerialize};
+use cdump::{CDebug, CDeserialize, CSerialize};
+use tests::eval_debug;
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct Foo {
     len: u32,
@@ -11,7 +12,7 @@ struct Foo {
 }
 
 #[test]
-fn cstring() {
+fn cstring_array() {
     let text1 = c"Hello world!";
     let text2 = c"Hello miyazaki!";
     let array = [text1.as_ptr(), text2.as_ptr()];
@@ -20,12 +21,15 @@ fn cstring() {
         text: array.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { Foo::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.text, copy.text);
     unsafe {

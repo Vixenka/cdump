@@ -1,4 +1,7 @@
-use std::ffi::{c_char, c_void, CStr};
+use std::{
+    ffi::{c_char, c_void, CStr},
+    mem,
+};
 
 use cdump::{CDeserialize, CDumpReader, CDumpWriter, CSerialize};
 
@@ -62,13 +65,14 @@ fn dynamic() {
     }
 }
 
-unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) {
+unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) -> usize {
     buf.align::<DynamicBar>();
     let ty = *(obj as *const DynamicType);
     match ty {
         DynamicType::Bar => {
             let obj = &*(obj as *const DynamicBar);
-            obj.serialize(buf)
+            obj.serialize(buf);
+            mem::size_of::<DynamicBar>()
         }
     }
 }

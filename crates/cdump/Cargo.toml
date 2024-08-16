@@ -13,6 +13,7 @@ license = "MIT"
 [features]
 default = ["builtin-buffer"]
 builtin-buffer = ["dep:aligned-vec"]
+cdebug = ["cdump-macro/cdebug"]
 
 [dependencies]
 libc.workspace = true

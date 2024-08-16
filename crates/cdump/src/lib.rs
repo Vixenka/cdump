@@ -14,6 +14,9 @@ pub use cdump_macro::{CDeserialize, CSerialize};
 pub use memoffset::offset_of;
 pub mod internal;
 
+#[cfg(feature = "cdebug")]
+pub use cdump_macro::CDebug;
+
 /// Trait for buffer suitable for CSerialization.
 /// # Safety
 /// The implementor must ensure that the buffer is prepared for the serialization next objects.

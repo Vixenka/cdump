@@ -1,11 +1,9 @@
-use std::{
-    ffi::{c_char, CStr},
-    fmt::Debug,
-};
+use std::ffi::{c_char, CStr};
 
-use cdump::{CDeserialize, CSerialize};
+use cdump::{CDebug, CDeserialize, CSerialize};
+use tests::eval_debug;
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct DeepFoo {
     len: u32,
@@ -14,7 +12,7 @@ struct DeepFoo {
     c: f64,
 }
 
-#[derive(Copy, Clone, CSerialize, CDeserialize)]
+#[derive(Copy, Clone, CSerialize, CDeserialize, CDebug)]
 #[repr(C)]
 struct ShallowBar {
     a: f64,
@@ -27,17 +25,6 @@ impl PartialEq for ShallowBar {
         self.a == other.a
             && self.c == other.c
             && unsafe { CStr::from_ptr(self.b) == CStr::from_ptr(other.b) }
-    }
-}
-
-impl Debug for ShallowBar {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let text = unsafe { CStr::from_ptr(self.b) };
-        f.debug_struct("ShallowBar")
-            .field("a", &self.a)
-            .field("b", &text)
-            .field("c", &self.c)
-            .finish()
     }
 }
 
@@ -64,19 +51,22 @@ fn array() {
         c: 2024.07,
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { DeepFoo::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.b, copy.b);
     assert_eq!(unsafe { *obj.b }, unsafe { *copy.b });
     assert_eq!(unsafe { *obj.b.add(1) }, unsafe { *copy.b.add(1) });
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct ArrayOfPrimitives {
     len: u32,
@@ -92,12 +82,15 @@ fn of_primitives() {
         b: array.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { ArrayOfPrimitives::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.b, copy.b);
     for i in 0..array.len() {
@@ -105,7 +98,7 @@ fn of_primitives() {
     }
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct ArrayWithExpressionInLen {
     len: u8,
@@ -121,12 +114,15 @@ fn expression_in_len() {
         b: array.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { ArrayWithExpressionInLen::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.b, copy.b);
     for i in 0..array.len() {
@@ -134,7 +130,7 @@ fn expression_in_len() {
     }
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+#[derive(CDebug, CSerialize, CDeserialize)]
 #[repr(C)]
 struct ArrayOfPointers {
     len: u8,
@@ -165,12 +161,15 @@ fn array_of_pointers() {
         data: ptrs.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { ArrayOfPointers::deserialize(&mut reader) };
 
+    eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.data, copy.data);
     for i in 0..ptrs.len() {

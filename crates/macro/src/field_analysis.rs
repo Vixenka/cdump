@@ -12,10 +12,10 @@ pub enum FieldType {
     Reference,
     CString,
     Array(Expr, Box<Field>),
-    Dynamic(Ident, Ident),
+    Dynamic(Ident, Ident, usize),
 }
 
-pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
+pub fn get_fields(ast: &DeriveInput, skip_shallow_part: bool) -> Result<Vec<Field>, Error> {
     let receiver = InputReceiver::from_derive_input(ast).unwrap();
     let mut vec = Vec::new();
 
@@ -36,7 +36,11 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
                 RawFieldType::CString => FieldType::CString,
                 RawFieldType::Dynamic => {
                     let dynamic = field.dynamic.as_ref().unwrap();
-                    FieldType::Dynamic(dynamic.serializer.clone(), dynamic.deserializer.clone())
+                    FieldType::Dynamic(
+                        dynamic.serializer.clone(),
+                        dynamic.deserializer.clone(),
+                        ptr_level,
+                    )
                 }
             };
 
@@ -61,6 +65,15 @@ pub fn get_fields(ast: &DeriveInput) -> Result<Vec<Field>, Error> {
                     None => fty,
                 },
             });
+        } else if !skip_shallow_part {
+            vec.push(Field {
+                ident: field.ident.clone(),
+                path: match &field.ty {
+                    Type::Path(path) => Some(path.clone()),
+                    _ => None,
+                },
+                ty: FieldType::Plain,
+            })
         }
     }
 
@@ -88,11 +101,18 @@ fn validate_field(
         }
     }
 
-    if raw_ty == RawFieldType::Dynamic && field.dynamic.is_none() {
-        return Err(Error::new(
-            field.ty.span(),
-            "dynamic field requires provide a serializer and deserializer",
-        ));
+    if raw_ty == RawFieldType::Dynamic {
+        if field.dynamic.is_none() {
+            return Err(Error::new(
+                field.ty.span(),
+                "dynamic field requires provide a serializer and deserializer",
+            ));
+        } else if ptr_level == 1 && field.array.is_some() {
+            return Err(Error::new(
+                field.ty.span(),
+                "array of dynamic field under one level of pointer is not supported",
+            ));
+        }
     }
 
     Ok(())
