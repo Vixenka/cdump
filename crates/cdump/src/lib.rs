@@ -1,6 +1,9 @@
 #![doc = include_str!("../../../README.md")]
 
-use std::mem::{self, MaybeUninit};
+use std::{
+    mem::{self, MaybeUninit},
+    ptr,
+};
 
 #[cfg(feature = "builtin-buffer")]
 use aligned_vec::AVec;
@@ -128,6 +131,54 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
         unsafe { dst.assume_init() }
     }
 }
+
+macro_rules! impl_cserialize_cdeserialize {
+    ($t:ident) => {
+        impl<T: CDumpWriter> CSerialize<T> for $t {
+            unsafe fn serialize(&self, buf: &mut T) {
+                internal::align_writer::<T, Self>(buf);
+                buf.push_slice(&self.to_ne_bytes());
+            }
+
+            unsafe fn serialize_without_shallow_copy(&self, _buf: &mut T, _start_index: usize) {}
+        }
+
+        impl<T: CDumpReader> CDeserialize<T> for $t {
+            unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
+                let size = mem::size_of::<Self>();
+                ptr::copy_nonoverlapping(
+                    Self::deserialize_ref_mut(buf) as *mut _ as *mut u8,
+                    dst as *mut u8,
+                    size,
+                )
+            }
+
+            unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self {
+                internal::align_reader::<T, Self>(buf);
+                let reference = buf.read_raw_slice(buf.get_read());
+                buf.add_read(mem::size_of::<Self>());
+                &mut *(reference as *mut Self)
+            }
+
+            unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
+        }
+    };
+}
+
+impl_cserialize_cdeserialize!(u8);
+impl_cserialize_cdeserialize!(u16);
+impl_cserialize_cdeserialize!(u32);
+impl_cserialize_cdeserialize!(u64);
+impl_cserialize_cdeserialize!(u128);
+impl_cserialize_cdeserialize!(usize);
+impl_cserialize_cdeserialize!(i8);
+impl_cserialize_cdeserialize!(i16);
+impl_cserialize_cdeserialize!(i32);
+impl_cserialize_cdeserialize!(i64);
+impl_cserialize_cdeserialize!(i128);
+impl_cserialize_cdeserialize!(isize);
+impl_cserialize_cdeserialize!(f32);
+impl_cserialize_cdeserialize!(f64);
 
 /// Simple buffer writer for CSerialization.
 #[cfg(feature = "builtin-buffer")]
