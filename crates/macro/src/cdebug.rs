@@ -1,4 +1,4 @@
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, DeriveInput};
 
 use crate::field_analysis::{self, Field, FieldType};
@@ -35,6 +35,17 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
             FieldType::Plain => quote! {
                 &self.#ident
             },
+            FieldType::InlineArray(array) => {
+                if array.elem.to_token_stream().to_string() == "c_char" {
+                    quote! {
+                        &unsafe { ::std::ffi::CStr::from_ptr(self.#ident.as_ptr()) }
+                    }
+                } else {
+                    quote! {
+                        &self.#ident
+                    }
+                }
+            }
             FieldType::Reference => quote! {
                 &unsafe { self.#ident.as_ref() }
             },

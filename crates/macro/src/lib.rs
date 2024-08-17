@@ -76,7 +76,9 @@ fn write_deep_fields_inner(
     };
 
     let result = match &field.ty {
-        FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
+        FieldType::Plain | FieldType::InlineArray(_) => {
+            unreachable!("shallow fields should not be under first level pointer")
+        }
         FieldType::Reference => {
             let path = field.path.to_token_stream();
             if is_primitive_type(&path) {
@@ -275,7 +277,9 @@ fn read_deep_fields_inner(
     let path = &field.path;
 
     let result = match &field.ty {
-        FieldType::Plain => unreachable!("plain fields should not be under first level pointer"),
+        FieldType::Plain | FieldType::InlineArray(_) => {
+            unreachable!("shallow fields should not be under first level pointer")
+        }
         FieldType::Reference => {
             let path = field.path.to_token_stream();
             if is_primitive_type(&path) {

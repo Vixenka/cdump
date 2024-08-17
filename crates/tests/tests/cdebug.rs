@@ -15,3 +15,18 @@ fn null_cstring() {
     };
     eval_debug(&obj);
 }
+
+#[derive(CDebug)]
+struct CStringInlined {
+    data: [c_char; 100],
+}
+
+#[test]
+fn cstring_inlined() {
+    let mut obj = CStringInlined { data: [0; 100] };
+    let text = c"Kiss Me Again!";
+    for (i, &c) in text.to_bytes().iter().enumerate() {
+        obj.data[i] = c as c_char;
+    }
+    eval_debug(&obj);
+}

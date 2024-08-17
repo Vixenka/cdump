@@ -1,5 +1,5 @@
 use darling::{ast::Data, FromDeriveInput};
-use syn::{spanned::Spanned, DeriveInput, Error, Expr, Ident, Type, TypePath};
+use syn::{spanned::Spanned, DeriveInput, Error, Expr, Ident, Type, TypeArray, TypePath};
 
 pub struct Field {
     pub ident: Option<Ident>,
@@ -9,6 +9,7 @@ pub struct Field {
 
 pub enum FieldType {
     Plain,
+    InlineArray(TypeArray),
     Reference,
     CString,
     Array(Expr, Box<Field>),
@@ -72,7 +73,10 @@ pub fn get_fields(ast: &DeriveInput, skip_shallow_part: bool) -> Result<Vec<Fiel
                     Type::Path(path) => Some(path.clone()),
                     _ => None,
                 },
-                ty: FieldType::Plain,
+                ty: match &field.ty {
+                    Type::Array(array) => FieldType::InlineArray(array.clone()),
+                    _ => FieldType::Plain,
+                },
             })
         }
     }
