@@ -77,7 +77,7 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                 }
             }
             FieldType::Dynamic(_, _, _) => quote! {
-                &"<debug not supported>"
+                &(!self.#ident.is_null()).then(|| &"<debug not supported>")
             },
         };
 
