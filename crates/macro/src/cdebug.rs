@@ -56,7 +56,7 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                 }
             },
             FieldType::Array(len, ty) => {
-                let extension = match ty.ty {
+                let extension = match &ty.ty {
                     FieldType::Reference => quote! {
                         .iter().map(|&ptr| ptr.as_ref()).collect::<Vec<_>>()
                     },
@@ -66,6 +66,12 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                             false => Some(::std::ffi::CStr::from_ptr(ptr)),
                         }).collect::<Vec<_>>()
                     },
+                    FieldType::Dynamic(dynamic) => {
+                        let value = dynamic.call_cdebugger(quote! { ptr });
+                        quote! {
+                            .iter().map(|&ptr| (!ptr.is_null()).then(|| #value)).collect::<Vec<_>>()
+                        }
+                    }
                     _ => quote! {},
                 };
 
@@ -76,9 +82,12 @@ fn write_fmt(fields: &[Field]) -> proc_macro2::TokenStream {
                     }
                 }
             }
-            FieldType::Dynamic(_, _, _) => quote! {
-                &(!self.#ident.is_null()).then(|| &"<debug not supported>")
-            },
+            FieldType::Dynamic(dynamic) => {
+                let value = dynamic.call_cdebugger(quote! { self.#ident });
+                quote! {
+                    &(!self.#ident.is_null()).then(|| #value)
+                }
+            }
         };
 
         quotes.push(quote! {

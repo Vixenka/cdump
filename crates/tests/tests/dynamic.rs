@@ -1,5 +1,6 @@
 use std::{
     ffi::{c_char, c_void, CStr},
+    fmt::Debug,
     mem,
 };
 
@@ -10,7 +11,7 @@ use tests::eval_debug;
 #[repr(C)]
 struct Foo {
     a: u32,
-    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer))]
+    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer, cdebugger = custom_cdebugger))]
     d: *const c_void,
     text: *const c_char,
 }
@@ -95,7 +96,14 @@ unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
     ptr
 }
 
-#[derive(Debug, CSerialize, CDeserialize)]
+unsafe fn custom_cdebugger(obj: *const c_void) -> &'static dyn Debug {
+    let ty = *(obj as *const DynamicType);
+    match ty {
+        DynamicType::Bar => &*(obj as *const DynamicBar),
+    }
+}
+
+#[derive(CSerialize, CDeserialize, CDebug)]
 #[repr(C)]
 struct ArrayOfDynamicTypes {
     len: u8,
@@ -129,11 +137,15 @@ fn array_of_dynamic_types() {
         data: ptrs.as_ptr(),
     };
 
+    eval_debug(&obj);
+
     let mut buf = cdump::CDumpBufferWriter::new(16);
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
     let copy = unsafe { ArrayOfDynamicTypes::deserialize(&mut reader) };
+
+    eval_debug(&copy);
 
     assert_eq!(obj.len, copy.len);
     assert_ne!(obj.data, copy.data);

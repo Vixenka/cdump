@@ -13,7 +13,25 @@ pub enum FieldType {
     Reference,
     CString,
     Array(Expr, Box<Field>),
-    Dynamic(Ident, Ident, usize),
+    Dynamic(DynamicField),
+}
+
+pub struct DynamicField {
+    pub serializer: Ident,
+    pub deserializer: Ident,
+    pub ptr_level: usize,
+    #[cfg(feature = "cdebug")]
+    pub cdebugger: Option<Ident>,
+}
+
+#[cfg(feature = "cdebug")]
+impl DynamicField {
+    pub fn call_cdebugger(&self, ptr: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+        match &self.cdebugger {
+            Some(cdebugger) => quote::quote! { unsafe { #cdebugger(#ptr) } },
+            None => quote::quote! { &"<missing cdebugger>" },
+        }
+    }
 }
 
 pub fn get_fields(ast: &DeriveInput, skip_shallow_part: bool) -> Result<Vec<Field>, Error> {
@@ -37,11 +55,13 @@ pub fn get_fields(ast: &DeriveInput, skip_shallow_part: bool) -> Result<Vec<Fiel
                 RawFieldType::CString => FieldType::CString,
                 RawFieldType::Dynamic => {
                     let dynamic = field.dynamic.as_ref().unwrap();
-                    FieldType::Dynamic(
-                        dynamic.serializer.clone(),
-                        dynamic.deserializer.clone(),
+                    FieldType::Dynamic(DynamicField {
+                        serializer: dynamic.serializer.clone(),
+                        deserializer: dynamic.deserializer.clone(),
                         ptr_level,
-                    )
+                        #[cfg(feature = "cdebug")]
+                        cdebugger: dynamic.cdebugger.clone(),
+                    })
                 }
             };
 
@@ -169,6 +189,8 @@ struct ArrayReceiver {
 struct DynamicReceiver {
     serializer: Ident,
     deserializer: Ident,
+    #[cfg(feature = "cdebug")]
+    cdebugger: Option<Ident>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

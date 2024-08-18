@@ -108,9 +108,12 @@ fn write_deep_fields_inner(
                 buf.push_slice(::std::slice::from_raw_parts(#ident as *const _ as *const u8, len));
             }
         }
-        FieldType::Dynamic(serializer, _, _) => quote! {
-            #serializer(buf, #ident);
-        },
+        FieldType::Dynamic(dynamic) => {
+            let serializer = &dynamic.serializer;
+            quote! {
+                #serializer(buf, #ident);
+            }
+        }
         FieldType::Array(len, inner) => {
             let inner_path = inner.path.to_token_stream();
             let alignment_type = get_alignment_type(inner);
@@ -186,21 +189,26 @@ fn get_inner_of_array_serialize(inner: &Field, ident: &TokenStream) -> (TokenStr
             },
             true,
         ),
-        FieldType::Dynamic(serializer, _, ptr_level) => match ptr_level {
-            1 => (
-                quote! {
-                    read += #serializer(buf, #ident.byte_add(read));
-                },
-                false,
-            ),
-            2 => (
-                quote! {
-                    #serializer(buf, *#ident.add(i));
-                },
-                true,
-            ),
-            _ => unimplemented!("three or more level of pointer to dynamic type is unsupported"),
-        },
+        FieldType::Dynamic(dynamic) => {
+            let serializer = &dynamic.serializer;
+            match dynamic.ptr_level {
+                1 => (
+                    quote! {
+                        read += #serializer(buf, #ident.byte_add(read));
+                    },
+                    false,
+                ),
+                2 => (
+                    quote! {
+                        #serializer(buf, *#ident.add(i));
+                    },
+                    true,
+                ),
+                _ => {
+                    unimplemented!("three or more level of pointer to dynamic type is unsupported")
+                }
+            }
+        }
         _ => unimplemented!("2D arrays"),
     }
 }
@@ -298,9 +306,12 @@ fn read_deep_fields_inner(
                 #ident = buf.read_raw_slice(#ident as usize) as *mut ::std::ffi::c_char;
             }
         }
-        FieldType::Dynamic(_, deserializer, _) => quote! {
-            #ident = #deserializer(buf);
-        },
+        FieldType::Dynamic(dynamic) => {
+            let deserializer = &dynamic.deserializer;
+            quote! {
+                #ident = #deserializer(buf);
+            }
+        }
         FieldType::Array(len, inner) => {
             let inner_path = inner.path.to_token_stream();
             let alignment_type = get_alignment_type(inner);
@@ -401,28 +412,33 @@ fn get_inner_of_array_deserialize(
                 *ptr = buf.read_raw_slice(*ptr as usize) as *const ::std::ffi::c_char;
             },
         ),
-        FieldType::Dynamic(_, deserializer, ptr_level) => match ptr_level {
-            1 => (
-                quote! {
-                    #ident = #deserializer(buf);
-                },
-                quote! { 1 },
-                quote! {
-                    _ = #deserializer(buf);
-                },
-            ),
-            2 => (
-                quote! {
-                    #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_void;
-                },
-                quote! { 0 },
-                quote! {
-                    let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
-                    *ptr = #deserializer(buf);
-                },
-            ),
-            _ => unimplemented!("three or more level of pointer to dynamic type is unsupported"),
-        },
+        FieldType::Dynamic(dynamic) => {
+            let deserializer = &dynamic.deserializer;
+            match dynamic.ptr_level {
+                1 => (
+                    quote! {
+                        #ident = #deserializer(buf);
+                    },
+                    quote! { 1 },
+                    quote! {
+                        _ = #deserializer(buf);
+                    },
+                ),
+                2 => (
+                    quote! {
+                        #ident = buf.read_raw_slice(size * len) as *const *const ::std::ffi::c_void;
+                    },
+                    quote! { 0 },
+                    quote! {
+                        let ptr = buf.as_mut_ptr_at(array_start_index + size * i);
+                        *ptr = #deserializer(buf);
+                    },
+                ),
+                _ => {
+                    unimplemented!("three or more level of pointer to dynamic type is unsupported")
+                }
+            }
+        }
         _ => unimplemented!("2D arrays"),
     }
 }
@@ -430,7 +446,7 @@ fn get_inner_of_array_deserialize(
 fn get_alignment_type(inner: &Field) -> TokenStream {
     match inner.ty {
         // Align two levels of pointers to size of pointer
-        FieldType::CString | FieldType::Reference | FieldType::Dynamic(_, _, _) => {
+        FieldType::CString | FieldType::Reference | FieldType::Dynamic(_) => {
             quote! { usize }
         }
         _ => inner.path.to_token_stream(),
