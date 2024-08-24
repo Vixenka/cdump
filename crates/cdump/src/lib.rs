@@ -155,8 +155,7 @@ macro_rules! impl_cserialize_cdeserialize {
 
             unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self {
                 internal::align_reader::<T, Self>(buf);
-                let reference = buf.read_raw_slice(buf.get_read());
-                buf.add_read(mem::size_of::<Self>());
+                let reference = buf.read_raw_slice(mem::size_of::<Self>());
                 &mut *(reference as *mut Self)
             }
 
@@ -261,7 +260,7 @@ unsafe impl CDumpReader for CDumpBufferReader {
     }
 
     unsafe fn read_raw_slice(&mut self, len: usize) -> *const u8 {
-        let s = unsafe { &*self.data.get() };
+        let s = &*self.data.get();
         let ptr = s.as_ptr().add(self.read);
         self.read += len;
         ptr
