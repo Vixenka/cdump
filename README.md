@@ -15,6 +15,10 @@ Crate for deep binary serialization of raw C types like e.g. [Vulkan structures]
 - [x] [Array of CStrings](docs/features/cstring_array.md)
 - [x] [Dynamic types](docs/features/dynamic.md)
 
+### Rust features
+- [cdebug](docs/features/cdebug.md) - macro to implement [Debug](https://doc.rust-lang.org/std/fmt/trait.Debug.html) for raw C types
+- builtin-buffer - provide default buffers for `CDumpReader` and `CDumpWriter` traits.
+
 Read more in the [changelog](/CHANGELOG.md).
 
 ## Why?

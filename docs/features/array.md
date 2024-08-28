@@ -25,4 +25,4 @@ struct Bar {
 ```
 
 ## Safety
-Pointer to object must be valid. Expression for length contain `self` object which can be not fully initialized memory.
+Pointer to object must be valid or null. Expression for length contain `self` object which can be not fully initialized memory.

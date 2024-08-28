@@ -54,7 +54,7 @@ where
     reference
 }
 
-/// Align the buffer to the size of `T`.
+/// Align the buffer to the size of `T2`.
 #[inline]
 pub fn align_writer<T1, T2>(buf: &mut T1)
 where

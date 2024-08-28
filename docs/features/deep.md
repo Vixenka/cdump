@@ -20,4 +20,4 @@ struct Bar {
 ```
 
 ## Safety
-Pointer to object must be valid.
+Pointer to object must be valid or null.

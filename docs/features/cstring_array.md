@@ -15,4 +15,4 @@ struct Foo {
 ```
 
 ## Safety
-Every pointer must be valid, and not null.
+Every pointer must be valid or be null.
