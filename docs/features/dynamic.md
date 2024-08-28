@@ -51,5 +51,18 @@ unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
 }
 ```
 
+### [CDebug](cdebug.md) feature
+To provide good Debug representation add new optional parameter for dynamic field named `cdebugger`:
+```rust
+#[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer, cdebugger = custom_cdebugger))]
+```
+
+And create function which will be extract `&dyn Debug` type from dynamic pointer:
+```rust
+unsafe fn custom_cdebugger(obj: *const c_void) -> &'static dyn Debug {
+    &*(obj as *const Bar)
+}
+```
+
 ## Safety
 In that method of serialization many things are related to what user of crate will do. Remember to have everything correctly aligned, and to do not creating invalid states.
