@@ -57,7 +57,7 @@ fn array() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { DeepFoo::deserialize(&mut reader) };
+    let copy = unsafe { DeepFoo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
@@ -88,7 +88,7 @@ fn of_primitives() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { ArrayOfPrimitives::deserialize(&mut reader) };
+    let copy = unsafe { ArrayOfPrimitives::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
@@ -120,7 +120,7 @@ fn expression_in_len() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { ArrayWithExpressionInLen::deserialize(&mut reader) };
+    let copy = unsafe { ArrayWithExpressionInLen::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.len, copy.len);
@@ -167,7 +167,7 @@ fn array_of_pointers() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { ArrayOfPointers::deserialize(&mut reader) };
+    let copy = unsafe { ArrayOfPointers::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.len, copy.len);

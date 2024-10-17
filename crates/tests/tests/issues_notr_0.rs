@@ -4,12 +4,12 @@ use std::{
 };
 
 use cdump::{CDebug, CDeserialize, CSerialize};
-use tests::{empty_deserializer, empty_serializer, eval_debug};
+use tests::{empty_deserializer, empty_serializer, empty_sizeof, eval_debug};
 
 #[derive(CDebug, Clone, Copy, CDeserialize, CSerialize)]
 #[repr(C)]
 pub struct VkInstanceCreateInfo {
-    #[cdump(dynamic(serializer = empty_serializer, deserializer = empty_deserializer))]
+    #[cdump(dynamic(serializer = empty_serializer, deserializer = empty_deserializer, size_of = empty_sizeof))]
     pub p_next: *const c_void,
     pub p_application_info: *const VkApplicationInfo,
     pub enabled_layer_count: u32,
@@ -23,7 +23,7 @@ pub struct VkInstanceCreateInfo {
 #[derive(CDebug, Clone, Copy, CDeserialize, CSerialize)]
 #[repr(C)]
 pub struct VkApplicationInfo {
-    #[cdump(dynamic(serializer = empty_serializer, deserializer = empty_deserializer))]
+    #[cdump(dynamic(serializer = empty_serializer, deserializer = empty_deserializer, size_of = empty_sizeof))]
     pub p_next: *const c_void,
     pub p_application_name: *const c_char,
     pub p_engine_name: *const c_char,
@@ -57,7 +57,7 @@ fn vk_instance_create_info() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { VkInstanceCreateInfo::deserialize(&mut reader) };
+    let copy = unsafe { VkInstanceCreateInfo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
 

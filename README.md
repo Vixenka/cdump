@@ -65,7 +65,7 @@ unsafe { foo.serialize(&mut buf); }
 
 let mut reader = buf.into_reader();
 // SAFETY: reader's buffer contains Foo what is guaranteed above 
-let copy_of_foo = unsafe { Foo::deserialize(&mut reader) };
+let ref_to_copy_of_foo = unsafe { Foo::deserialize_ref(&mut reader) };
 ```
 More information about usage you can find at [support list](#support).
 

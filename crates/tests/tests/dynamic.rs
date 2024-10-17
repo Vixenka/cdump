@@ -11,7 +11,7 @@ use tests::eval_debug;
 #[repr(C)]
 struct Foo {
     a: u32,
-    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer, cdebugger = custom_cdebugger))]
+    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer, size_of = custom_sizeof, cdebugger = custom_cdebugger))]
     d: *const c_void,
     text: *const c_char,
 }
@@ -49,7 +49,7 @@ fn dynamic() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { Foo::deserialize(&mut reader) };
+    let copy = unsafe { Foo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
@@ -70,30 +70,31 @@ fn dynamic() {
     }
 }
 
-unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) -> usize {
+unsafe fn custom_serializer<T: CDumpWriter>(buf: &mut T, obj: *const c_void) {
     buf.align::<DynamicBar>();
     let ty = *(obj as *const DynamicType);
     match ty {
         DynamicType::Bar => {
             let obj = &*(obj as *const DynamicBar);
             obj.serialize(buf);
-            mem::size_of::<DynamicBar>()
         }
     }
 }
 
-unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> *const c_void {
+unsafe fn custom_deserializer<T: CDumpReader>(buf: &mut T) -> (*const c_void, usize) {
     buf.align::<DynamicBar>();
     let ptr = buf.as_mut_ptr_at::<c_void>(buf.get_read());
     let ty = *(ptr as *const DynamicType);
+    let size;
     match ty {
         DynamicType::Bar => {
             let dst = &mut *(ptr as *mut DynamicBar);
-            buf.add_read(::std::mem::size_of::<DynamicBar>());
-            DynamicBar::deserialize_to_without_shallow_copy(buf, dst);
+            size = mem::size_of::<DynamicBar>();
+            buf.add_read(size);
+            DynamicBar::deserialize_ref_mut_without_shallow_copy(buf, dst);
         }
     }
-    ptr
+    (ptr, size)
 }
 
 unsafe fn custom_cdebugger(obj: *const c_void) -> &'static dyn Debug {
@@ -103,12 +104,19 @@ unsafe fn custom_cdebugger(obj: *const c_void) -> &'static dyn Debug {
     }
 }
 
+unsafe fn custom_sizeof(obj: *const c_void) -> usize {
+    let ty = *(obj as *const DynamicType);
+    match ty {
+        DynamicType::Bar => mem::size_of::<DynamicBar>(),
+    }
+}
+
 #[derive(CSerialize, CDeserialize, CDebug)]
 #[repr(C)]
 struct ArrayOfDynamicTypes {
     len: u8,
     #[cdump(array(len = self.len))]
-    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer))]
+    #[cdump(dynamic(serializer = custom_serializer, deserializer = custom_deserializer, size_of = custom_sizeof))]
     data: *const *const c_void,
 }
 
@@ -143,7 +151,7 @@ fn array_of_dynamic_types() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { ArrayOfDynamicTypes::deserialize(&mut reader) };
+    let copy = unsafe { ArrayOfDynamicTypes::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
 

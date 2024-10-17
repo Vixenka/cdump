@@ -24,7 +24,7 @@ fn cstring() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { Foo::deserialize(&mut reader) };
+    let copy = unsafe { Foo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.a, copy.a);

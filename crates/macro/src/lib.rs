@@ -1,4 +1,4 @@
-use field_analysis::{Field, FieldType};
+use field_analysis::{DynamicField, Field, FieldType};
 use helpers::{is_primitive_type, validate_repr, ErrorExt};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
@@ -219,10 +219,12 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
     let validate_repr = validate_repr(&ast.attrs, "C", ast.span()).to_compile_error();
     let name = ast.ident.clone();
 
-    let align_and_read_copy = align_and_read_copy();
-    let deep_fields = match field_analysis::get_fields(&ast, true) {
-        Ok(fields) => read_deep_fields(fields, &name),
-        Err(err) => err.to_compile_error(),
+    let (deep_fields_to, deep_fields_ref) = match field_analysis::get_fields(&ast, true) {
+        Ok(fields) => (
+            read_deep_fields(&fields, &name, true),
+            read_deep_fields(&fields, &name, false),
+        ),
+        Err(err) => (err.to_compile_error(), quote! {}),
     };
 
     proc_macro::TokenStream::from(quote! {
@@ -230,38 +232,46 @@ pub fn c_deserialize_derive(input: proc_macro::TokenStream) -> proc_macro::Token
             unsafe fn deserialize_to(buf: &mut T, dst: *mut Self) {
                 #validate_repr
 
-                #align_and_read_copy
-                Self::deserialize_to_without_shallow_copy(buf, dst);
+                ::cdump::internal::align_reader::<T, Self>(buf);
+                let temp = buf.as_mut_ptr_at(buf.get_read());
+                buf.add_read(::std::mem::size_of::<Self>());
+                Self::deserialize_to_without_shallow_copy(buf, temp, dst);
+                ::std::ptr::copy_nonoverlapping(temp, dst, 1);
+            }
+
+            unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, temp: *mut Self, dst: *mut Self) {
+                #deep_fields_to
             }
 
             unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self {
                 ::cdump::internal::align_reader::<T, Self>(buf);
                 let reference = buf.as_mut_ptr_at(buf.get_read());
                 buf.add_read(::std::mem::size_of::<Self>());
-                Self::deserialize_to_without_shallow_copy(buf, reference);
+                Self::deserialize_ref_mut_without_shallow_copy(buf, reference);
                 &mut *reference
             }
 
-            unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self) {
-                #deep_fields
+            unsafe fn deserialize_ref_mut_without_shallow_copy(buf: &mut T, dst: *mut Self) {
+                #deep_fields_ref
             }
         }
     })
 }
 
-fn align_and_read_copy() -> TokenStream {
-    quote! {
-        ::cdump::internal::align_reader::<T, Self>(buf);
-        let size = ::std::mem::size_of::<Self>();
-        std::ptr::copy_nonoverlapping(buf.read_raw_slice(size), dst as *mut _ as *mut u8, size);
-    }
-}
-
-fn read_deep_fields(fields: Vec<Field>, name: &proc_macro2::Ident) -> TokenStream {
+fn read_deep_fields(
+    fields: &[Field],
+    name: &proc_macro2::Ident,
+    to_src_destination: bool,
+) -> TokenStream {
     let mut quotes = Vec::new();
 
     for (index, field) in fields.iter().enumerate() {
-        quotes.push(read_deep_fields_inner(field, 0, name, index));
+        quotes.push(read_deep_fields_inner(
+            field,
+            name,
+            index,
+            to_src_destination,
+        ));
     }
 
     quotes.into_iter().collect()
@@ -269,18 +279,19 @@ fn read_deep_fields(fields: Vec<Field>, name: &proc_macro2::Ident) -> TokenStrea
 
 fn read_deep_fields_inner(
     field: &Field,
-    ptr_offset: usize,
     name: &proc_macro2::Ident,
     field_index: usize,
+    to_src_destination: bool,
 ) -> TokenStream {
     let field_ident = &field.ident;
-    let ident = match ptr_offset == 0 {
-        true => quote! {
-            (*dst).#field_ident
-        },
-        false => quote! {
-            (*dst).#field_ident.add(#ptr_offset)
-        },
+    let ident = quote! {
+        (*dst).#field_ident
+    };
+    let temp_ident = match to_src_destination {
+        true => Some(quote! {
+            (*temp).#field_ident
+        }),
+        false => None,
     };
     let path = &field.path;
 
@@ -288,37 +299,24 @@ fn read_deep_fields_inner(
         FieldType::Plain | FieldType::InlineArray(_) => {
             unreachable!("shallow fields should not be under first level pointer")
         }
-        FieldType::Reference => {
-            let path = field.path.to_token_stream();
-            if is_primitive_type(&path) {
-                quote! {
-                    ::cdump::internal::align_reader::<T, #path>(buf);
-                    #ident = buf.read_raw_slice(::std::mem::size_of::<#path>()) as *mut #path;
-                }
-            } else {
-                quote! {
-                    #ident = ::cdump::internal::deserialize_shallow_copied(buf);
-                }
-            }
-        }
+        FieldType::Reference => deserialize_reference(field, &ident, &temp_ident),
         FieldType::CString => {
             quote! {
                 #ident = buf.read_raw_slice(#ident as usize) as *mut ::std::ffi::c_char;
             }
         }
-        FieldType::Dynamic(dynamic) => {
-            let deserializer = &dynamic.deserializer;
-            quote! {
-                #ident = #deserializer(buf);
-            }
-        }
+        FieldType::Dynamic(dynamic) => deserialize_dynamic(dynamic, &ident, &temp_ident),
         FieldType::Array(len, inner) => {
             let inner_path = inner.path.to_token_stream();
             let alignment_type = get_alignment_type(inner);
 
             let len_function = Ident::new(
                 &format!(
-                    "do_not_use_cdump_internal_function_len_of_array_at_index_{}",
+                    "do_not_use_cdump_internal_function_len_of_array_at_index_{}{}",
+                    match to_src_destination {
+                        true => "to",
+                        false => "",
+                    },
                     field_index
                 ),
                 Span::call_site(),
@@ -373,6 +371,58 @@ fn read_deep_fields_inner(
         if !#ident.is_null() {
             #result
         }
+    }
+}
+
+fn deserialize_reference(
+    field: &Field,
+    ident: &TokenStream,
+    temp_ident: &Option<TokenStream>,
+) -> TokenStream {
+    let path = field.path.to_token_stream();
+    if temp_ident.is_none() {
+        return match is_primitive_type(&path) {
+            true => quote! {
+                ::cdump::internal::align_reader::<T, #path>(buf);
+                #ident = buf.read_raw_slice(::std::mem::size_of::<#path>()) as *mut #path;
+            },
+            false => quote! {
+                #ident = ::cdump::internal::deserialize_shallow_copied(buf);
+            },
+        };
+    }
+
+    match is_primitive_type(&path) {
+        true => quote! {
+            ::cdump::internal::align_reader::<T, #path>(buf);
+            let ptr = buf.read_raw_slice(::std::mem::size_of::<#path>());
+            ::std::ptr::copy_nonoverlapping(ptr as *const u8, #ident as *mut u8, size);
+            #temp_ident = #ident;
+        },
+        false => quote! {
+            ::cdump::internal::deserialize_shallow_copied_to(buf, #ident as *mut #path);
+        },
+    }
+}
+
+fn deserialize_dynamic(
+    dynamic: &DynamicField,
+    ident: &TokenStream,
+    temp_ident: &Option<TokenStream>,
+) -> TokenStream {
+    let deserializer = &dynamic.deserializer;
+    if temp_ident.is_none() {
+        return quote! {
+            #ident = #deserializer(buf).0;
+        };
+    }
+
+    let size_of = &dynamic.size_of;
+    quote! {
+        let (ptr, size) = #deserializer(buf);
+        debug_assert!(#size_of(#ident) >= size, "field size is smaller than expected");
+        ::std::ptr::copy_nonoverlapping(ptr as *const u8, #ident as *mut u8, size);
+        #temp_ident = #ident;
     }
 }
 

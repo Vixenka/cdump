@@ -1,9 +1,6 @@
 #![doc = include_str!("../../../README.md")]
 
-use std::{
-    mem::{self, MaybeUninit},
-    ptr,
-};
+use std::{mem, ptr};
 
 #[cfg(feature = "builtin-buffer")]
 use aligned_vec::AVec;
@@ -88,6 +85,9 @@ pub trait CSerialize<T: CDumpWriter> {
 /// Trait for deserializing the raw data from the buffer.
 pub trait CDeserialize<T: CDumpReader>: Sized {
     /// Deserialize the data from the buffer to the initialized memory.
+    /// # Remarks
+    /// Copy the whole object tree to the destination memory with reuse of destination's pointers.
+    /// When debug assertions are enabled, the function will be check if the destination memory have sufficient size.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     /// Field `dst` can be uninitialized, then reading from it is undefined behavior.
@@ -96,39 +96,23 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
     /// Deserializes the data from the buffer to the destination, ommiting the shallow copy.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of deep part of `Self`.
-    unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, dst: *mut Self);
+    unsafe fn deserialize_to_without_shallow_copy(buf: &mut T, temp: *mut Self, dst: *mut Self);
 
     /// Deserialize the data from the buffer, and returns the reference to object which memory is located in the buffer.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self;
 
+    /// Deserializes the data from the buffer to the destination, ommiting the shallow copy.
+    /// # Safety
+    /// The caller must ensure that the next data in the buffer is a valid representation of deep part of `Self`.
+    unsafe fn deserialize_ref_mut_without_shallow_copy(buf: &mut T, dst: *mut Self);
+
     /// Deserialize the data from the buffer, and returns the reference to object which memory is located in the buffer.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     unsafe fn deserialize_ref(buf: &mut T) -> &Self {
         Self::deserialize_ref_mut(buf)
-    }
-
-    /// Deserialize the data from the buffer to the uninitialized memory.
-    /// # Safety
-    /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
-    unsafe fn deserialize_to_uninit(buf: &mut T, dst: &mut MaybeUninit<Self>) {
-        // Safety: MaybeUninit<T> is a transparent wrapper around T, so it should be work properly.
-        Self::deserialize_to(
-            buf,
-            mem::transmute::<&mut MaybeUninit<Self>, &mut Self>(dst),
-        );
-    }
-
-    /// Deserialize the data from the buffer to the new object of `Self`.
-    /// # Safety
-    /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
-    unsafe fn deserialize(buf: &mut T) -> Self {
-        let mut dst = MaybeUninit::uninit();
-        Self::deserialize_to_uninit(buf, &mut dst);
-        // Safety: `dst` should be fully initialized via [`deserialize_to_uninit`].
-        unsafe { dst.assume_init() }
     }
 }
 
@@ -153,13 +137,20 @@ macro_rules! impl_cserialize_cdeserialize {
                 )
             }
 
+            unsafe fn deserialize_to_without_shallow_copy(
+                _buf: &mut T,
+                _temp: *mut Self,
+                _dst: *mut Self,
+            ) {
+            }
+
             unsafe fn deserialize_ref_mut(buf: &mut T) -> &mut Self {
                 internal::align_reader::<T, Self>(buf);
                 let reference = buf.read_raw_slice(mem::size_of::<Self>());
                 &mut *(reference as *mut Self)
             }
 
-            unsafe fn deserialize_to_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
+            unsafe fn deserialize_ref_mut_without_shallow_copy(_buf: &mut T, _dst: *mut Self) {}
         }
     };
 }
