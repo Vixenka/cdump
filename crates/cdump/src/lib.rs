@@ -87,7 +87,8 @@ pub trait CDeserialize<T: CDumpReader>: Sized {
     /// Deserialize the data from the buffer to the initialized memory.
     /// # Remarks
     /// Copy the whole object tree to the destination memory with reuse of destination's pointers.
-    /// When debug assertions are enabled, the function will be check if the destination memory have sufficient size.
+    /// When debug assertions are enabled, the function will try to check if the destination memory have sufficient
+    /// size.
     /// # Safety
     /// The caller must ensure that the next data in the buffer is a valid representation of `Self`.
     /// Field `dst` can be uninitialized, then reading from it is undefined behavior.

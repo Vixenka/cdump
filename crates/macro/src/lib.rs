@@ -2,7 +2,7 @@ use field_analysis::{DynamicField, Field, FieldType};
 use helpers::{is_primitive_type, validate_repr, ErrorExt};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, spanned::Spanned, DeriveInput, Error, Ident, TypePath};
+use syn::{parse_macro_input, spanned::Spanned, DeriveInput, Error, Expr, Ident, TypePath};
 
 #[cfg(feature = "cdebug")]
 mod cdebug;
@@ -307,70 +307,22 @@ fn read_deep_fields_inner(
         }
         FieldType::Dynamic(dynamic) => deserialize_dynamic(dynamic, &ident, &temp_ident),
         FieldType::Array(len, inner) => {
-            let inner_path = inner.path.to_token_stream();
-            let alignment_type = get_alignment_type(inner);
-
-            let len_function = Ident::new(
-                &format!(
-                    "do_not_use_cdump_internal_function_len_of_array_at_index_{}{}",
-                    match to_src_destination {
-                        true => "to",
-                        false => "",
-                    },
-                    field_index
-                ),
-                Span::call_site(),
-            );
-
-            let mut result = quote! {
-                impl #name {
-                    #[inline]
-                    #[doc(hidden)]
-                    fn #len_function(&self) -> usize {
-                        (#len) as usize
-                    }
-                }
-
-                let len = (*dst).#len_function();
-                let size = ::std::mem::size_of::<#alignment_type>();
-
-                ::cdump::internal::align_reader::<T, #alignment_type>(buf);
-            };
-
-            if !is_primitive_type(&inner_path) {
-                let (prefix, start, inner) = get_inner_of_array_deserialize(inner, &ident, path);
-                result = quote! {
-                    #result
-                    let array_start_index = buf.get_read();
-
-                    #prefix
-                    for i in #start..len {
-                        #inner
-                    }
-                };
-            } else {
-                if let FieldType::Reference = inner.ty {
-                    return Error::new(
-                        inner.ident.span(),
-                        "pointer to array of pointers to primitive type is not supported",
-                    )
-                    .to_compile_error();
-                }
-
-                result = quote! {
-                    #result
-                    #ident = buf.read_raw_slice(size * len) as *const #inner_path;
-                };
-            }
-
-            result
+            deserialize_array(len, inner, path, field_index, name, &ident, &temp_ident)
         }
     };
 
-    quote! {
-        if !#ident.is_null() {
-            #result
-        }
+    match temp_ident {
+        Some(temp_ident) => quote! {
+            if !#temp_ident.is_null() {
+                debug_assert!(!(*dst).#field_ident.is_null(), "destination field is null, but source field is not");
+                #result
+            }
+        },
+        None => quote! {
+            if !#ident.is_null() {
+                #result
+            }
+        },
     }
 }
 
@@ -395,12 +347,14 @@ fn deserialize_reference(
     match is_primitive_type(&path) {
         true => quote! {
             ::cdump::internal::align_reader::<T, #path>(buf);
-            let ptr = buf.read_raw_slice(::std::mem::size_of::<#path>());
+            let size = ::std::mem::size_of::<#path>();
+            let ptr = buf.read_raw_slice(size);
             ::std::ptr::copy_nonoverlapping(ptr as *const u8, #ident as *mut u8, size);
             #temp_ident = #ident;
         },
         false => quote! {
             ::cdump::internal::deserialize_shallow_copied_to(buf, #ident as *mut #path);
+            #temp_ident = #ident;
         },
     }
 }
@@ -424,6 +378,98 @@ fn deserialize_dynamic(
         ::std::ptr::copy_nonoverlapping(ptr as *const u8, #ident as *mut u8, size);
         #temp_ident = #ident;
     }
+}
+
+fn deserialize_array(
+    len: &Expr,
+    inner: &Field,
+    path: &Option<TypePath>,
+    field_index: usize,
+    name: &proc_macro2::Ident,
+    ident: &TokenStream,
+    temp_ident: &Option<TokenStream>,
+) -> TokenStream {
+    let inner_path = inner.path.to_token_stream();
+    let alignment_type = get_alignment_type(inner);
+
+    let len_function = Ident::new(
+        &format!(
+            "do_not_use_cdump_internal_function_len_of_array_at_index_{}{}",
+            match temp_ident.is_some() {
+                true => "to",
+                false => "",
+            },
+            field_index
+        ),
+        Span::call_site(),
+    );
+
+    let mut result = quote! {
+        impl #name {
+            #[inline]
+            #[doc(hidden)]
+            fn #len_function(&self) -> usize {
+                (#len) as usize
+            }
+        }
+
+        let size = ::std::mem::size_of::<#alignment_type>();
+        ::cdump::internal::align_reader::<T, #alignment_type>(buf);
+    };
+
+    result = match temp_ident.is_some() {
+        true => quote! {
+            #result
+            let len = (*temp).#len_function();
+        },
+        false => quote! {
+            #result
+            let len = (*dst).#len_function();
+        },
+    };
+
+    if !is_primitive_type(&inner_path) {
+        let (prefix, start, inner) = get_inner_of_array_deserialize(inner, ident, path);
+        result = match temp_ident {
+            Some(_) => quote! {
+                unimplemented!("temp_ident is not supported for array of non-primitive type");
+            },
+            None => quote! {
+                #result
+                let array_start_index = buf.get_read();
+
+                #prefix
+                for i in #start..len {
+                    #inner
+                }
+            },
+        };
+    } else {
+        if let FieldType::Reference = inner.ty {
+            return Error::new(
+                inner.ident.span(),
+                "pointer to array of pointers to primitive type is not supported",
+            )
+            .to_compile_error();
+        }
+
+        result = match temp_ident {
+            Some(temp_ident) => quote! {
+                #result
+                debug_assert!((*dst).#len_function() >= len, "array size is smaller than expected, expected: {}, got: {}", (*dst).#len_function(), len);
+                let whole_size = size * len;
+                ::std::ptr::copy_nonoverlapping(buf.read_raw_slice(whole_size), #ident as *mut u8, whole_size);
+                #temp_ident = #ident;
+            },
+            None => quote! {
+                #result
+                #ident = buf.as_mut_ptr_at(buf.get_read());
+                buf.add_read(size * len);
+            },
+        };
+    }
+
+    result
 }
 
 fn get_inner_of_array_deserialize(
