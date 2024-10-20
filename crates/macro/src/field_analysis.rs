@@ -19,6 +19,7 @@ pub enum FieldType {
 pub struct DynamicField {
     pub serializer: Ident,
     pub deserializer: Ident,
+    pub size_of: Ident,
     pub ptr_level: usize,
     #[cfg(feature = "cdebug")]
     pub cdebugger: Option<Ident>,
@@ -58,6 +59,7 @@ pub fn get_fields(ast: &DeriveInput, skip_shallow_part: bool) -> Result<Vec<Fiel
                     FieldType::Dynamic(DynamicField {
                         serializer: dynamic.serializer.clone(),
                         deserializer: dynamic.deserializer.clone(),
+                        size_of: dynamic.size_of.clone(),
                         ptr_level,
                         #[cfg(feature = "cdebug")]
                         cdebugger: dynamic.cdebugger.clone(),
@@ -189,6 +191,7 @@ struct ArrayReceiver {
 struct DynamicReceiver {
     serializer: Ident,
     deserializer: Ident,
+    size_of: Ident,
     #[cfg(feature = "cdebug")]
     cdebugger: Option<Ident>,
 }

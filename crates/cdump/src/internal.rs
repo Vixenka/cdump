@@ -1,4 +1,4 @@
-use std::{ffi::c_char, mem};
+use std::{ffi::c_char, mem, ptr};
 
 use crate::{CDeserialize, CDumpReader, CDumpWriter};
 
@@ -33,11 +33,27 @@ where
     T1: crate::CDumpReader,
     T2: crate::CDeserialize<T1>,
 {
-    buf.align::<T2>();
+    align_reader::<T1, T2>(buf);
     let reference = buf.as_mut_ptr_at::<T2>(buf.get_read());
     buf.add_read(::std::mem::size_of::<T2>());
-    CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
+    CDeserialize::deserialize_ref_mut_without_shallow_copy(buf, reference);
     reference
+}
+
+/// Deserialize the shallow copied data in the buffer and returns the reference to it.
+/// # Safety
+/// Caller must ensure that the next data in the buffer is a valid representation of `T2`.
+#[inline]
+pub unsafe fn deserialize_shallow_copied_to<T1, T2>(buf: &mut T1, dst: *mut T2)
+where
+    T1: crate::CDumpReader,
+    T2: crate::CDeserialize<T1>,
+{
+    align_reader::<T1, T2>(buf);
+    let temp = buf.as_mut_ptr_at::<T2>(buf.get_read());
+    buf.add_read(::std::mem::size_of::<T2>());
+    CDeserialize::deserialize_to_without_shallow_copy(buf, temp, dst);
+    ptr::copy_nonoverlapping(temp, dst, 1);
 }
 
 // Deserialize the shallow copied data in the buffer and returns the reference to it.
@@ -50,7 +66,7 @@ where
     T2: crate::CDeserialize<T1>,
 {
     let reference = buf.as_mut_ptr_at(index);
-    CDeserialize::deserialize_to_without_shallow_copy(buf, reference);
+    CDeserialize::deserialize_ref_mut_without_shallow_copy(buf, reference);
     reference
 }
 

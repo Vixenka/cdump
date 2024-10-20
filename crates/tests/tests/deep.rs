@@ -52,7 +52,7 @@ fn deep() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { DeepFoo::deserialize(&mut reader) };
+    let copy = unsafe { DeepFoo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
@@ -99,7 +99,7 @@ fn very_deep() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { VeryDeepFoo::deserialize(&mut reader) };
+    let copy = unsafe { VeryDeepFoo::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_eq!(obj.a, copy.a);
@@ -129,7 +129,7 @@ fn deep_of_primitives() {
     unsafe { obj.serialize(&mut buf) };
 
     let mut reader = buf.into_reader();
-    let copy = unsafe { DeepOfPrimitives::deserialize(&mut reader) };
+    let copy = unsafe { DeepOfPrimitives::deserialize_ref(&mut reader) };
 
     eval_debug(&copy);
     assert_ne!(obj.a, copy.a);
